@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Plus, Trash2, Download, Upload, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Download, Upload, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { DEFAULT_DATA } from '../types';
 import type { AppData } from '../types';
@@ -14,6 +14,18 @@ export default function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const columns = data.habits.columns;
+  // Safely read hiddenColumns — handles old data that didn't have this field
+  const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
+
+  function isHidden(idx: number) { return hiddenColumns.includes(idx); }
+
+  function toggleVisibility(idx: number) {
+    setData(prev => {
+      const cur = prev.habits.hiddenColumns ?? [];
+      const next = cur.includes(idx) ? cur.filter(h => h !== idx) : [...cur, idx];
+      return { ...prev, habits: { ...prev.habits, hiddenColumns: next } };
+    });
+  }
 
   function addColumn() {
     const name = newCol.trim();
@@ -23,24 +35,32 @@ export default function SettingsPage() {
   }
 
   function deleteColumn(idx: number) {
-    setData(prev => ({
-      ...prev,
-      habits: {
-        ...prev.habits,
-        columns: prev.habits.columns.filter((_, i) => i !== idx),
-        checks: Object.fromEntries(
-          Object.entries(prev.habits.checks).map(([date, dayChecks]) => {
-            const updated: Record<string, boolean> = {};
-            Object.entries(dayChecks).forEach(([ci, val]) => {
-              const n = Number(ci);
-              if (n < idx) updated[ci] = val;
-              else if (n > idx) updated[String(n - 1)] = val;
-            });
-            return [date, updated];
-          })
-        ),
-      },
-    }));
+    setData(prev => {
+      const curHidden = prev.habits.hiddenColumns ?? [];
+      return {
+        ...prev,
+        habits: {
+          ...prev.habits,
+          columns: prev.habits.columns.filter((_, i) => i !== idx),
+          // Remove deleted index from hidden; shift indices above it down by 1
+          hiddenColumns: curHidden
+            .filter(h => h !== idx)
+            .map(h => (h > idx ? h - 1 : h)),
+          checks: Object.fromEntries(
+            Object.entries(prev.habits.checks).map(([date, dayChecks]) => {
+              const updated: Record<string, boolean> = {};
+              Object.entries(dayChecks).forEach(([ci, val]) => {
+                const n = Number(ci);
+                if (n < idx) updated[ci] = val;
+                else if (n > idx) updated[String(n - 1)] = val;
+                // n === idx → deleted, skip
+              });
+              return [date, updated];
+            })
+          ),
+        },
+      };
+    });
   }
 
   function renameColumn(idx: number, name: string) {
@@ -74,32 +94,74 @@ export default function SettingsPage() {
     <div className="page">
       <h1 className="page-title">Settings</h1>
 
-      {/* Habit Columns */}
+      {/* ── Habit Columns ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Habit Columns</p>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Up to 4 columns. These appear in your monthly habit table.
+          Up to 4 columns. Toggle the eye icon to hide/show a column — hidden columns are excluded
+          from the table and all progress calculations, but their data is preserved.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-          {columns.map((col, i) => (
-            <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                className="input"
-                value={col}
-                onChange={e => renameColumn(i, e.target.value)}
-                maxLength={30}
-              />
-              <button
-                className="btn-danger"
-                style={{ padding: '0.5rem', flexShrink: 0 }}
-                onClick={() => deleteColumn(i)}
-                title="Remove column"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
+          {columns.map((col, i) => {
+            const hidden = isHidden(i);
+            return (
+              <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+
+                {/* Visibility toggle */}
+                <button
+                  onClick={() => toggleVisibility(i)}
+                  title={hidden ? 'Show column' : 'Hide column'}
+                  style={{
+                    flexShrink: 0,
+                    width: 36, height: 36,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: hidden ? 'rgba(255,71,87,0.08)' : 'rgba(0,255,157,0.08)',
+                    border: `1px solid ${hidden ? 'rgba(255,71,87,0.3)' : 'rgba(0,255,157,0.25)'}`,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    color: hidden ? 'var(--accent-danger)' : 'var(--accent-primary)',
+                    transition: 'all 160ms',
+                  }}
+                >
+                  {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+
+                {/* Name input — dimmed when hidden */}
+                <input
+                  className="input"
+                  value={col}
+                  onChange={e => renameColumn(i, e.target.value)}
+                  maxLength={30}
+                  style={{ opacity: hidden ? 0.45 : 1, transition: 'opacity 160ms' }}
+                />
+
+                {/* Hidden badge */}
+                {hidden && (
+                  <span style={{
+                    flexShrink: 0, fontSize: '0.65rem', fontWeight: 700,
+                    color: 'var(--accent-danger)', background: 'rgba(255,71,87,0.1)',
+                    border: '1px solid rgba(255,71,87,0.25)',
+                    borderRadius: 20, padding: '0.15rem 0.5rem',
+                    letterSpacing: '0.06em', textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    hidden
+                  </span>
+                )}
+
+                {/* Delete */}
+                <button
+                  className="btn-danger"
+                  style={{ padding: '0.5rem', flexShrink: 0 }}
+                  onClick={() => deleteColumn(i)}
+                  title="Permanently delete column"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            );
+          })}
           {columns.length === 0 && (
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No columns. Add one below.</p>
           )}
@@ -125,7 +187,7 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Export / Import */}
+      {/* ── Export / Import ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Data Backup</p>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
@@ -138,7 +200,8 @@ export default function SettingsPage() {
           <button className="btn-secondary" onClick={() => fileRef.current?.click()}>
             <Upload size={15} /> Import JSON
           </button>
-          <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
+          <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
         </div>
         {importSuccess && (
           <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', marginTop: '0.75rem' }}>Data imported successfully!</p>
@@ -148,7 +211,7 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Danger zone */}
+      {/* ── Danger zone ── */}
       <div className="card" style={{ borderColor: 'rgba(255,71,87,0.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
           <AlertTriangle size={16} color="var(--accent-danger)" />

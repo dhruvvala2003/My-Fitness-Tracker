@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Calendar, Flame, Zap, BarChart2, Settings } from 'lucide-react';
+import { Home, Calendar, Flame, Zap, BarChart2, Settings, User } from 'lucide-react';
 
 const NAV = [
   { to: '/',         icon: Home,      label: 'Home',     end: true  },
@@ -8,10 +8,11 @@ const NAV = [
   { to: '/calories', icon: Zap,       label: 'Calories', end: true  },
   { to: '/charts',   icon: BarChart2, label: 'Charts',   end: true  },
   { to: '/settings', icon: Settings,  label: 'Settings', end: true  },
+  { to: '/contact',  icon: User,      label: 'About Me', end: true  },
 ];
 
-// Bottom nav shows 5 items (Charts accessible from Home quick-nav on mobile)
-const BOTTOM_NAV = NAV.filter(n => n.to !== '/charts');
+// Bottom nav shows 5 items (Charts + About Me accessible from sidebar on desktop)
+const BOTTOM_NAV = NAV.filter(n => n.to !== '/charts' && n.to !== '/contact');
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (

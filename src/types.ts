@@ -1,5 +1,6 @@
 export interface HabitsData {
   columns: string[];
+  hiddenColumns: number[];   // indices of columns hidden from habits table & all calculations
   checks: Record<string, Record<string, boolean>>;
 }
 
@@ -27,6 +28,7 @@ export interface AppData {
 export const DEFAULT_DATA: AppData = {
   habits: {
     columns: ['Go Gym', 'Reading'],
+    hiddenColumns: [],
     checks: {},
   },
   streaks: [],

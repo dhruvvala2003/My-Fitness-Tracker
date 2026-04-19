@@ -7,6 +7,7 @@ import StreakDetailPage from './pages/StreakDetailPage';
 import CaloriesPage from './pages/CaloriesPage';
 import ChartsPage from './pages/ChartsPage';
 import SettingsPage from './pages/SettingsPage';
+import ContactPage from './pages/ContactPage';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="/calories"    element={<CaloriesPage />} />
           <Route path="/charts"      element={<ChartsPage />} />
           <Route path="/settings"    element={<SettingsPage />} />
+          <Route path="/contact"     element={<ContactPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>
