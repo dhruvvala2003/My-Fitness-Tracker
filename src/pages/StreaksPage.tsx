@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flame, Plus, ChevronRight, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
-import type { AppData, StreakData } from '../types';
+import { useAppData } from '../context/DataContext';
+import type { StreakData } from '../types';
 import { today, daysDiff, formatFullDate } from '../utils/dateHelpers';
 
 function getCurrentStreak(streak: StreakData): number {
@@ -20,23 +19,19 @@ function getSinceDate(streak: StreakData): string {
 }
 
 export default function StreaksPage() {
-  const [data, setData] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data, addStreak, deleteStreak } = useAppData();
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(today());
 
-  function addStreak() {
+  async function handleAddStreak() {
     if (!name.trim()) return;
     const newStreak: StreakData = { id: uuidv4(), name: name.trim(), startDate, breakDates: [] };
-    setData(prev => ({ ...prev, streaks: [...prev.streaks, newStreak] }));
+    await addStreak(newStreak);
     setName('');
     setStartDate(today());
     setShowForm(false);
-  }
-
-  function deleteStreak(id: string) {
-    setData(prev => ({ ...prev, streaks: prev.streaks.filter(s => s.id !== id) }));
   }
 
   return (
@@ -57,7 +52,7 @@ export default function StreaksPage() {
             placeholder='e.g. "No Soft Drink"'
             value={name}
             onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addStreak()}
+            onKeyDown={e => e.key === 'Enter' && handleAddStreak()}
           />
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Started on</label>
@@ -70,7 +65,7 @@ export default function StreaksPage() {
             />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button className="btn-primary" onClick={addStreak}>Add</button>
+            <button className="btn-primary" onClick={handleAddStreak}>Add</button>
             <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
           </div>
         </div>

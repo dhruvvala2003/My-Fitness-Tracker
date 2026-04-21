@@ -1,33 +1,16 @@
 import { Check } from 'lucide-react';
-import useLocalStorage from '../hooks/useLocalStorage';
+import { useAppData } from '../context/DataContext';
 import ProgressCard from '../components/ProgressCard';
-import { DEFAULT_DATA } from '../types';
-import type { AppData } from '../types';
 import { today, getCurrentMonthDays, formatDisplayDate } from '../utils/dateHelpers';
 
 export default function HabitsPage() {
-  const [data, setData] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data, loading, toggleHabitCheck } = useAppData();
   const { columns, checks } = data.habits;
+  const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
+  const visibleIndices = columns.map((_, i) => i).filter(i => !hiddenColumns.includes(i));
   const todayStr = today();
   const days = getCurrentMonthDays();
 
-  function toggle(dateStr: string, colIdx: number) {
-    setData(prev => ({
-      ...prev,
-      habits: {
-        ...prev.habits,
-        checks: {
-          ...prev.habits.checks,
-          [dateStr]: {
-            ...(prev.habits.checks[dateStr] ?? {}),
-            [colIdx]: !(prev.habits.checks[dateStr]?.[colIdx] ?? false),
-          },
-        },
-      },
-    }));
-  }
-
-  // Progress calculation — only count days up to today
   const now = new Date();
   const currentDay = now.getDate();
   const elapsedDays = days.slice(0, currentDay);
@@ -39,15 +22,23 @@ export default function HabitsPage() {
   }
 
   function overallProgress() {
-    const total = elapsedDays.length * columns.length;
+    const total = elapsedDays.length * visibleIndices.length;
     if (total === 0) return 0;
     const checked = elapsedDays.reduce((acc, d) => {
-      return acc + columns.reduce((s, _, i) => s + (checks[d]?.[i] ? 1 : 0), 0);
+      return acc + visibleIndices.reduce((s, i) => s + (checks[d]?.[i] ? 1 : 0), 0);
     }, 0);
     return (checked / total) * 100;
   }
 
   const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  if (loading) {
+    return (
+      <div className="page">
+        <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -63,8 +54,8 @@ export default function HabitsPage() {
           value={overallProgress()}
           detail={`Day ${currentDay} of ${days.length}`}
         />
-        {columns.map((col, i) => (
-          <ProgressCard key={i} label={col} value={colProgress(i)} />
+        {visibleIndices.map(i => (
+          <ProgressCard key={i} label={columns[i]} value={colProgress(i)} />
         ))}
       </div>
 
@@ -74,7 +65,7 @@ export default function HabitsPage() {
           <thead>
             <tr>
               <th>Date</th>
-              {columns.map((col, i) => <th key={i}>{col}</th>)}
+              {visibleIndices.map(i => <th key={i}>{columns[i]}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -85,13 +76,13 @@ export default function HabitsPage() {
               return (
                 <tr key={dateStr} className={rowClass}>
                   <td>{formatDisplayDate(dateStr)}</td>
-                  {columns.map((_, colIdx) => {
+                  {visibleIndices.map(colIdx => {
                     const checked = !!checks[dateStr]?.[colIdx];
                     return (
                       <td key={colIdx}>
                         <button
                           className={`check-btn${checked ? ' checked' : ''}`}
-                          onClick={() => !isFuture && toggle(dateStr, colIdx)}
+                          onClick={() => !isFuture && toggleHabitCheck(dateStr, colIdx)}
                           disabled={isFuture}
                           aria-label={checked ? 'Uncheck' : 'Check'}
                         >
@@ -110,6 +101,11 @@ export default function HabitsPage() {
       {columns.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'center' }}>
           No habit columns yet. Go to Settings to add some.
+        </p>
+      )}
+      {columns.length > 0 && visibleIndices.length === 0 && (
+        <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'center' }}>
+          All columns are hidden. Toggle visibility in Settings.
         </p>
       )}
     </div>

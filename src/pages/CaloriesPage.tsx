@@ -1,14 +1,13 @@
 import { useState, useRef } from 'react';
 import { Upload, Zap, Edit2, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
-import type { AppData, CalorieEntry } from '../types';
+import { useAppData } from '../context/DataContext';
+import type { CalorieEntry } from '../types';
 import { today } from '../utils/dateHelpers';
 import { analyzeFood, fileToBase64 } from '../utils/aiCalories';
 
 export default function CaloriesPage() {
-  const [data, setData] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data, logMeal, deleteMeal } = useAppData();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -44,7 +43,7 @@ export default function CaloriesPage() {
     try {
       const result = await analyzeFood(imageBase64, imageMime, g);
       setEstimatedCal(result.calories);
-      if (!mealName) setMealName(result.name); // auto-fill name
+      if (!mealName) setMealName(result.name);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -60,7 +59,7 @@ export default function CaloriesPage() {
     if (imageBase64 && estimatedCal !== null) runAnalysis(g);
   }
 
-  function logMeal() {
+  async function handleLogMeal() {
     if (estimatedCal === null) return;
     const entry: CalorieEntry = {
       id: uuidv4(),
@@ -69,10 +68,7 @@ export default function CaloriesPage() {
       calories: estimatedCal,
       time: new Date().toTimeString().slice(0, 5),
     };
-    setData(prev => ({
-      ...prev,
-      calorieLog: { ...prev.calorieLog, [todayStr]: [...(prev.calorieLog[todayStr] ?? []), entry] },
-    }));
+    await logMeal(entry, todayStr);
     setImagePreview(null);
     setImageBase64('');
     setEstimatedCal(null);
@@ -80,13 +76,6 @@ export default function CaloriesPage() {
     setGrams(100);
     setGramsInput('100');
     setEditingGrams(false);
-  }
-
-  function deleteEntry(id: string) {
-    setData(prev => ({
-      ...prev,
-      calorieLog: { ...prev.calorieLog, [todayStr]: (prev.calorieLog[todayStr] ?? []).filter(e => e.id !== id) },
-    }));
   }
 
   return (
@@ -155,7 +144,7 @@ export default function CaloriesPage() {
               )}
             </div>
 
-            {/* Meal name — auto-filled by AI */}
+            {/* Meal name */}
             <input
               className="input"
               placeholder="Food name (auto-detected after analysis)"
@@ -188,7 +177,7 @@ export default function CaloriesPage() {
                 {loading ? 'Analyzing...' : estimatedCal !== null ? 'Re-analyze' : 'Analyze'}
               </button>
               {estimatedCal !== null && (
-                <button className="btn-secondary" onClick={logMeal}>
+                <button className="btn-secondary" onClick={handleLogMeal}>
                   <Plus size={15} /> Log Meal
                 </button>
               )}
@@ -215,7 +204,7 @@ export default function CaloriesPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-primary)', fontWeight: 600 }}>{entry.calories} kcal</span>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }} onClick={() => deleteEntry(entry.id)}>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }} onClick={() => deleteMeal(entry.id)}>
                     <Trash2 size={15} />
                   </button>
                 </div>

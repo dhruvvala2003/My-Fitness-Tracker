@@ -1,93 +1,24 @@
-import { useState, useRef } from 'react';
-import { Plus, Trash2, Download, Upload, AlertTriangle, Eye, EyeOff } from 'lucide-react';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
-import type { AppData } from '../types';
-import { exportData, importData } from '../utils/dataExport';
+import { useState } from 'react';
+import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut } from 'lucide-react';
+import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function SettingsPage() {
-  const [data, setData] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility } = useAppData();
+  const { signOut, user } = useAuth();
   const [newCol, setNewCol] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importSuccess, setImportSuccess] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const columns = data.habits.columns;
-  // Safely read hiddenColumns — handles old data that didn't have this field
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
 
   function isHidden(idx: number) { return hiddenColumns.includes(idx); }
 
-  function toggleVisibility(idx: number) {
-    setData(prev => {
-      const cur = prev.habits.hiddenColumns ?? [];
-      const next = cur.includes(idx) ? cur.filter(h => h !== idx) : [...cur, idx];
-      return { ...prev, habits: { ...prev.habits, hiddenColumns: next } };
-    });
-  }
-
-  function addColumn() {
+  async function handleAddColumn() {
     const name = newCol.trim();
     if (!name || columns.length >= 4) return;
-    setData(prev => ({ ...prev, habits: { ...prev.habits, columns: [...prev.habits.columns, name] } }));
+    await addHabitColumn(name);
     setNewCol('');
-  }
-
-  function deleteColumn(idx: number) {
-    setData(prev => {
-      const curHidden = prev.habits.hiddenColumns ?? [];
-      return {
-        ...prev,
-        habits: {
-          ...prev.habits,
-          columns: prev.habits.columns.filter((_, i) => i !== idx),
-          // Remove deleted index from hidden; shift indices above it down by 1
-          hiddenColumns: curHidden
-            .filter(h => h !== idx)
-            .map(h => (h > idx ? h - 1 : h)),
-          checks: Object.fromEntries(
-            Object.entries(prev.habits.checks).map(([date, dayChecks]) => {
-              const updated: Record<string, boolean> = {};
-              Object.entries(dayChecks).forEach(([ci, val]) => {
-                const n = Number(ci);
-                if (n < idx) updated[ci] = val;
-                else if (n > idx) updated[String(n - 1)] = val;
-                // n === idx → deleted, skip
-              });
-              return [date, updated];
-            })
-          ),
-        },
-      };
-    });
-  }
-
-  function renameColumn(idx: number, name: string) {
-    setData(prev => ({
-      ...prev,
-      habits: {
-        ...prev.habits,
-        columns: prev.habits.columns.map((c, i) => (i === idx ? name : c)),
-      },
-    }));
-  }
-
-  async function handleImport(file: File) {
-    setImportError(null);
-    setImportSuccess(false);
-    try {
-      const imported = await importData(file);
-      setData(imported);
-      setImportSuccess(true);
-    } catch (e) {
-      setImportError((e as Error).message);
-    }
-  }
-
-  function clearAllData() {
-    setData(DEFAULT_DATA);
-    setConfirmClear(false);
   }
 
   return (
@@ -110,7 +41,7 @@ export default function SettingsPage() {
 
                 {/* Visibility toggle */}
                 <button
-                  onClick={() => toggleVisibility(i)}
+                  onClick={() => toggleColumnVisibility(i)}
                   title={hidden ? 'Show column' : 'Hide column'}
                   style={{
                     flexShrink: 0,
@@ -127,11 +58,11 @@ export default function SettingsPage() {
                   {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
 
-                {/* Name input — dimmed when hidden */}
+                {/* Name input */}
                 <input
                   className="input"
                   value={col}
-                  onChange={e => renameColumn(i, e.target.value)}
+                  onChange={e => renameHabitColumn(i, e.target.value)}
                   maxLength={30}
                   style={{ opacity: hidden ? 0.45 : 1, transition: 'opacity 160ms' }}
                 />
@@ -154,7 +85,7 @@ export default function SettingsPage() {
                 <button
                   className="btn-danger"
                   style={{ padding: '0.5rem', flexShrink: 0 }}
-                  onClick={() => deleteColumn(i)}
+                  onClick={() => deleteHabitColumn(i)}
                   title="Permanently delete column"
                 >
                   <Trash2 size={15} />
@@ -174,10 +105,10 @@ export default function SettingsPage() {
               placeholder='e.g. "Meditation"'
               value={newCol}
               onChange={e => setNewCol(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addColumn()}
+              onKeyDown={e => e.key === 'Enter' && handleAddColumn()}
               maxLength={30}
             />
-            <button className="btn-primary" onClick={addColumn} style={{ flexShrink: 0 }}>
+            <button className="btn-primary" onClick={handleAddColumn} style={{ flexShrink: 0 }}>
               <Plus size={15} /> Add
             </button>
           </div>
@@ -187,28 +118,16 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* ── Export / Import ── */}
+      {/* ── Account ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
-        <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Data Backup</p>
+        <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Account</p>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Export your data as JSON for backup or cross-device sync. Import to restore.
+          Signed in as <span style={{ color: 'var(--text-primary)' }}>{user?.email}</span>.
+          Your data syncs automatically across all devices.
         </p>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn-primary" onClick={() => exportData(data)}>
-            <Download size={15} /> Export JSON
-          </button>
-          <button className="btn-secondary" onClick={() => fileRef.current?.click()}>
-            <Upload size={15} /> Import JSON
-          </button>
-          <input ref={fileRef} type="file" accept=".json,application/json" style={{ display: 'none' }}
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
-        </div>
-        {importSuccess && (
-          <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', marginTop: '0.75rem' }}>Data imported successfully!</p>
-        )}
-        {importError && (
-          <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', marginTop: '0.75rem' }}>{importError}</p>
-        )}
+        <button className="btn-secondary" onClick={signOut}>
+          <LogOut size={15} /> Sign Out
+        </button>
       </div>
 
       {/* ── Danger zone ── */}
@@ -218,17 +137,25 @@ export default function SettingsPage() {
           <p style={{ fontWeight: 600, color: 'var(--accent-danger)' }}>Danger Zone</p>
         </div>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Permanently delete all app data. This cannot be undone.
+          Delete all habit columns permanently. This cannot be undone.
         </p>
         {confirmClear ? (
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Are you sure?</span>
-            <button className="btn-danger" onClick={clearAllData}>Yes, clear all</button>
+            <button
+              className="btn-danger"
+              onClick={async () => {
+                for (let i = columns.length - 1; i >= 0; i--) await deleteHabitColumn(i);
+                setConfirmClear(false);
+              }}
+            >
+              Yes, delete all
+            </button>
             <button className="btn-secondary" onClick={() => setConfirmClear(false)}>Cancel</button>
           </div>
         ) : (
           <button className="btn-danger" onClick={() => setConfirmClear(true)}>
-            <Trash2 size={15} /> Clear All Data
+            <Trash2 size={15} /> Delete All Columns
           </button>
         )}
       </div>

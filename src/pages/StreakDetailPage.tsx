@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Flame } from 'lucide-react';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
-import type { AppData, StreakData } from '../types';
+import { useAppData } from '../context/DataContext';
+import type { StreakData } from '../types';
 import { today, daysDiff, formatFullDate, formatDisplayDate } from '../utils/dateHelpers';
 
 function getCurrentStreak(streak: StreakData): number {
@@ -16,7 +15,7 @@ function getCurrentStreak(streak: StreakData): number {
 export default function StreakDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [data, setData] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data, logBreakDate, removeBreakDate } = useAppData();
   const [breakDate, setBreakDate] = useState(today());
 
   const streak = data.streaks.find(s => s.id === id);
@@ -34,26 +33,6 @@ export default function StreakDetailPage() {
 
   const currentDays = getCurrentStreak(streak);
   const sortedBreaks = [...streak.breakDates].sort().reverse();
-
-  function logBreak() {
-    if (!breakDate) return;
-    if (streak!.breakDates.includes(breakDate)) return;
-    setData(prev => ({
-      ...prev,
-      streaks: prev.streaks.map(s =>
-        s.id === id ? { ...s, breakDates: [...s.breakDates, breakDate] } : s
-      ),
-    }));
-  }
-
-  function removeBreak(date: string) {
-    setData(prev => ({
-      ...prev,
-      streaks: prev.streaks.map(s =>
-        s.id === id ? { ...s, breakDates: s.breakDates.filter(d => d !== date) } : s
-      ),
-    }));
-  }
 
   return (
     <div className="page">
@@ -100,7 +79,7 @@ export default function StreakDetailPage() {
             max={today()}
             onChange={e => setBreakDate(e.target.value)}
           />
-          <button className="btn-danger" onClick={logBreak}>
+          <button className="btn-danger" onClick={() => logBreakDate(streak.id, breakDate)}>
             <Plus size={16} /> Log Break
           </button>
         </div>
@@ -135,7 +114,7 @@ export default function StreakDetailPage() {
                 </span>
                 <button
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }}
-                  onClick={() => removeBreak(d)}
+                  onClick={() => removeBreakDate(streak.id, d)}
                   title="Remove this break"
                 >
                   <Trash2 size={15} />

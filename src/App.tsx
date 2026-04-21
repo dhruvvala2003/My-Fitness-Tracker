@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { DataProvider } from './context/DataContext';
 import Layout from './components/Layout';
+import AuthPage from './pages/AuthPage';
 import HomePage from './pages/HomePage';
 import HabitsPage from './pages/HabitsPage';
 import StreaksPage from './pages/StreaksPage';
@@ -9,9 +12,21 @@ import ChartsPage from './pages/ChartsPage';
 import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
 
-export default function App() {
+function AppRoutes() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
+
   return (
-    <BrowserRouter>
+    <DataProvider>
       <Layout>
         <Routes>
           <Route path="/"            element={<HomePage />} />
@@ -24,6 +39,16 @@ export default function App() {
           <Route path="/contact"     element={<ContactPage />} />
         </Routes>
       </Layout>
+    </DataProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
 }
