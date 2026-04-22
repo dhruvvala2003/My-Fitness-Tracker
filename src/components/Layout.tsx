@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Calendar, Flame, Zap, BarChart2, Settings, User } from 'lucide-react';
+import { Home, Calendar, Flame, Zap, BarChart2, Settings, User, Lightbulb } from 'lucide-react';
 
 const NAV = [
   { to: '/',         icon: Home,      label: 'Home',     end: true  },
   { to: '/habits',   icon: Calendar,  label: 'Habits',   end: true  },
   { to: '/streaks',  icon: Flame,     label: 'Streaks',  end: false },
   { to: '/calories', icon: Zap,       label: 'Calories', end: true  },
+  { to: '/insights', icon: Lightbulb, label: 'Insights', end: true  },
   { to: '/charts',   icon: BarChart2, label: 'Charts',   end: true  },
   { to: '/settings', icon: Settings,  label: 'Settings', end: true  },
   { to: '/contact',  icon: User,      label: 'About Me', end: true  },

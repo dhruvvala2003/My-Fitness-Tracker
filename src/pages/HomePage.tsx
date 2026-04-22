@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Check } from 'lucide-react';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
-import type { AppData, StreakData } from '../types';
+import { useAppData } from '../context/DataContext';
+import type { StreakData } from '../types';
 import { today, daysDiff } from '../utils/dateHelpers';
 
 /* ─── Slide data ───────────────────────────────────────────────────── */
@@ -126,7 +125,7 @@ function currentStreakDays(s: StreakData): number {
 
 /* ─── Component ────────────────────────────────────────────────────── */
 export default function HomePage() {
-  const [data] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
+  const { data } = useAppData();
   const navigate = useNavigate();
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -157,9 +156,10 @@ export default function HomePage() {
 
   /* Stats */
   const todayStr  = today();
-  const { columns, checks } = data.habits;
-  const todayChecked  = columns.reduce((s, _, i) => s + (checks[todayStr]?.[String(i)] ? 1 : 0), 0);
-  const habitPct      = columns.length ? Math.round((todayChecked / columns.length) * 100) : 0;
+  const { columns, checks, hiddenColumns } = data.habits;
+  const visibleIndices = columns.map((_, i) => i).filter(i => !(hiddenColumns ?? []).includes(i));
+  const todayChecked  = visibleIndices.reduce((s, i) => s + (checks[todayStr]?.[String(i)] ? 1 : 0), 0);
+  const habitPct      = visibleIndices.length ? Math.round((todayChecked / visibleIndices.length) * 100) : 0;
   const bestStreak    = data.streaks.length ? Math.max(...data.streaks.map(currentStreakDays)) : 0;
   const todayCal      = (data.calorieLog[todayStr] ?? []).reduce((s, e) => s + e.calories, 0);
 
@@ -240,7 +240,7 @@ export default function HomePage() {
         {/* Today's stats */}
         <div className="home-stats">
           {[
-            { label: "Today's Habits", value: `${habitPct}%`,   sub: `${todayChecked}/${columns.length} done`,  color: 'var(--accent-primary)',   route: '/habits',   pct: habitPct },
+            { label: "Today's Habits", value: `${habitPct}%`,   sub: `${todayChecked}/${visibleIndices.length} done`,  color: 'var(--accent-primary)',   route: '/habits',   pct: habitPct },
             { label: 'Best Streak',    value: `${bestStreak}d`,  sub: 'days running',                            color: 'var(--accent-warn)',      route: '/streaks',  pct: null    },
             { label: 'Calories Today', value: `${todayCal}`,     sub: 'kcal logged',                             color: 'var(--accent-blue)',      route: '/calories', pct: null    },
           ].map(item => (

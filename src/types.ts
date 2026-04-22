@@ -19,10 +19,20 @@ export interface CalorieEntry {
   time: string;
 }
 
+export interface InsightEntry {
+  id: string;
+  type: 'learning' | 'mistake' | 'good' | 'bad';
+  text: string;
+  rating: number; // 1–5
+  date: string;   // YYYY-MM-DD
+  createdAt: string;
+}
+
 export interface AppData {
   habits: HabitsData;
   streaks: StreakData[];
   calorieLog: Record<string, CalorieEntry[]>;
+  insights: InsightEntry[];
 }
 
 export const DEFAULT_DATA: AppData = {
@@ -33,4 +43,5 @@ export const DEFAULT_DATA: AppData = {
   },
   streaks: [],
   calorieLog: {},
+  insights: [],
 };

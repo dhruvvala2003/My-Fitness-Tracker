@@ -4,8 +4,7 @@ import {
   ResponsiveContainer, CartesianGrid, Cell
 } from 'recharts';
 import { Download } from 'lucide-react';
-import useLocalStorage from '../hooks/useLocalStorage';
-import { DEFAULT_DATA } from '../types';
+import { useAppData } from '../context/DataContext';
 import type { AppData } from '../types';
 import {
   getPast7Days, getCurrentMonthDays, today,
@@ -15,15 +14,15 @@ import {
 
 function computeProgress(
   checks: AppData['habits']['checks'],
-  columns: string[],
+  visibleIndices: number[],
   dateStr: string
 ): number {
-  if (columns.length === 0) return 0;
-  const checked = columns.reduce(
-    (s, _, i) => s + (checks[dateStr]?.[String(i)] ? 1 : 0),
+  if (visibleIndices.length === 0) return 0;
+  const checked = visibleIndices.reduce(
+    (s, i) => s + (checks[dateStr]?.[String(i)] ? 1 : 0),
     0
   );
-  return Math.round((checked / columns.length) * 100);
+  return Math.round((checked / visibleIndices.length) * 100);
 }
 
 function barColor(value: number): string {
@@ -62,8 +61,9 @@ function downloadChartAsPng(ref: React.RefObject<HTMLDivElement | null>, filenam
 
 
 export default function ChartsPage() {
-  const [data] = useLocalStorage<AppData>('fittrack_v2', DEFAULT_DATA);
-  const { columns, checks } = data.habits;
+  const { data, loading } = useAppData();
+  const { columns, checks, hiddenColumns } = data.habits;
+  const visibleIndices = columns.map((_, i) => i).filter(i => !(hiddenColumns ?? []).includes(i));
   const todayStr = today();
 
   const weekRef = useRef<HTMLDivElement>(null);
@@ -72,7 +72,7 @@ export default function ChartsPage() {
   const weeklyData = getPast7Days().map(d => ({
     day: formatDayLabel(d),
     date: d,
-    progress: computeProgress(checks, columns, d),
+    progress: computeProgress(checks, visibleIndices, d),
   }));
 
   const monthlyData = getCurrentMonthDays()
@@ -81,11 +81,19 @@ export default function ChartsPage() {
       day: Number(d.split('-')[2]),
       date: d,
       label: formatDisplayDate(d),
-      progress: computeProgress(checks, columns, d),
+      progress: computeProgress(checks, visibleIndices, d),
     }));
 
   const weekRange = getWeekRangeLabel();
   const monthLabel = getCurrentMonthLabel();
+
+  if (loading) {
+    return (
+      <div className="page">
+        <p style={{ color: 'var(--text-secondary)' }}>Loading…</p>
+      </div>
+    );
+  }
 
   const CustomTooltipWeek = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
     if (!active || !payload?.length) return null;
@@ -182,7 +190,7 @@ export default function ChartsPage() {
         </div>
       </div>
 
-      {columns.length === 0 && (
+      {visibleIndices.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginTop: '1.5rem', fontSize: '0.875rem' }}>
           Add habit columns in Settings to see chart data.
         </p>

@@ -11,6 +11,7 @@ import CaloriesPage from './pages/CaloriesPage';
 import ChartsPage from './pages/ChartsPage';
 import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
+import InsightsPage from './pages/InsightsPage';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -37,6 +38,7 @@ function AppRoutes() {
           <Route path="/charts"      element={<ChartsPage />} />
           <Route path="/settings"    element={<SettingsPage />} />
           <Route path="/contact"     element={<ContactPage />} />
+          <Route path="/insights"   element={<InsightsPage />} />
         </Routes>
       </Layout>
     </DataProvider>

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { DEFAULT_DATA } from '../types';
-import type { AppData, CalorieEntry, StreakData } from '../types';
+import type { AppData, CalorieEntry, InsightEntry, StreakData } from '../types';
 
 interface DataContextType {
   data: AppData;
@@ -21,6 +21,10 @@ interface DataContextType {
   // Calories
   logMeal: (entry: CalorieEntry, date: string) => Promise<void>;
   deleteMeal: (id: string) => Promise<void>;
+  // Insights
+  addInsight: (entry: InsightEntry) => Promise<void>;
+  deleteInsight: (id: string) => Promise<void>;
+  updateInsightRating: (id: string, rating: number) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType>({} as DataContextType);
@@ -35,11 +39,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     const uid = user.id;
 
-    const [configResult, checksResult, streaksResult, caloriesResult] = await Promise.all([
+    const [configResult, checksResult, streaksResult, caloriesResult, insightsResult] = await Promise.all([
       supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('habit_checks').select('*').eq('user_id', uid),
       supabase.from('streaks').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('calorie_entries').select('*').eq('user_id', uid).order('time'),
+      supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
     ]);
 
     // Build checks: only stored rows are true
@@ -65,6 +70,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     const config = configResult.data;
 
+    const insights: InsightEntry[] = (insightsResult.data ?? []).map(row => ({
+      id: row.id,
+      type: row.type as 'learning' | 'mistake',
+      text: row.text,
+      rating: row.rating,
+      date: row.date,
+      createdAt: row.created_at,
+    }));
+
     setData({
       habits: {
         columns: config?.columns ?? [],
@@ -73,6 +87,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       },
       streaks,
       calorieLog,
+      insights,
     });
     setLoading(false);
   }, [user]);
@@ -239,12 +254,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('calorie_entries').delete().eq('user_id', user!.id).eq('id', id);
   }
 
+  // ── Insight helpers ────────────────────────────────────────────────────────
+
+  async function addInsight(entry: InsightEntry) {
+    setData(prev => ({ ...prev, insights: [entry, ...prev.insights] }));
+    await supabase.from('daily_insights').insert({
+      id: entry.id,
+      user_id: user!.id,
+      type: entry.type,
+      text: entry.text,
+      rating: entry.rating,
+      date: entry.date,
+      created_at: entry.createdAt,
+    });
+  }
+
+  async function deleteInsight(id: string) {
+    setData(prev => ({ ...prev, insights: prev.insights.filter(e => e.id !== id) }));
+    await supabase.from('daily_insights').delete().eq('user_id', user!.id).eq('id', id);
+  }
+
+  async function updateInsightRating(id: string, rating: number) {
+    setData(prev => ({
+      ...prev,
+      insights: prev.insights.map(e => e.id === id ? { ...e, rating } : e),
+    }));
+    await supabase.from('daily_insights').update({ rating }).eq('user_id', user!.id).eq('id', id);
+  }
+
   return (
     <DataContext.Provider value={{
       data, loading,
       toggleHabitCheck, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility,
       addStreak, deleteStreak, logBreakDate, removeBreakDate,
       logMeal, deleteMeal,
+      addInsight, deleteInsight, updateInsightRating,
     }}>
       {children}
     </DataContext.Provider>
