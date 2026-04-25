@@ -72,7 +72,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     const insights: InsightEntry[] = (insightsResult.data ?? []).map(row => ({
       id: row.id,
-      type: row.type as 'learning' | 'mistake',
+      type: row.type as 'learning' | 'mistake' | 'good' | 'bad',
       text: row.text,
       rating: row.rating,
       date: row.date,
