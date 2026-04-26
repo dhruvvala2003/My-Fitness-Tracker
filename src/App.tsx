@@ -12,6 +12,7 @@ import ChartsPage from './pages/ChartsPage';
 import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
 import InsightsPage from './pages/InsightsPage';
+import VideosPage from './pages/VideosPage';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -39,6 +40,7 @@ function AppRoutes() {
           <Route path="/settings"    element={<SettingsPage />} />
           <Route path="/contact"     element={<ContactPage />} />
           <Route path="/insights"   element={<InsightsPage />} />
+          <Route path="/videos"     element={<VideosPage />} />
         </Routes>
       </Layout>
     </DataProvider>

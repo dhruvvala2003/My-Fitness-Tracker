@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Calendar, Flame, Zap, BarChart2, Settings, User, Lightbulb } from 'lucide-react';
+import { Home, Calendar, Flame, Zap, BarChart2, Settings, User, Lightbulb, Video } from 'lucide-react';
 
 const NAV = [
   { to: '/',         icon: Home,      label: 'Home',     end: true  },
@@ -7,12 +7,13 @@ const NAV = [
   { to: '/streaks',  icon: Flame,     label: 'Streaks',  end: false },
   { to: '/calories', icon: Zap,       label: 'Calories', end: true  },
   { to: '/insights', icon: Lightbulb, label: 'Insights', end: true  },
+  { to: '/videos',   icon: Video,     label: 'Videos',   end: true  },
   { to: '/charts',   icon: BarChart2, label: 'Charts',   end: true  },
   { to: '/settings', icon: Settings,  label: 'Settings', end: true  },
   { to: '/contact',  icon: User,      label: 'About Me', end: true  },
 ];
 
-// Bottom nav shows 5 items (Charts + About Me accessible from sidebar on desktop)
+// Bottom nav excludes Charts + About Me (sidebar-only on desktop); Videos stays in for workout access
 const BOTTOM_NAV = NAV.filter(n => n.to !== '/charts' && n.to !== '/contact');
 
 export default function Layout({ children }: { children: React.ReactNode }) {

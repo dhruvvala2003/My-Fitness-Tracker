@@ -12,6 +12,25 @@ function getCurrentStreak(streak: StreakData): number {
   return daysDiff(lastBreak, t);
 }
 
+function getStreakAtBreak(streak: StreakData, breakDate: string): number {
+  const sorted = [...streak.breakDates].sort();
+  const idx = sorted.indexOf(breakDate);
+  if (idx === 0) return daysDiff(streak.startDate, breakDate);
+  return daysDiff(sorted[idx - 1], breakDate);
+}
+
+function getMaxStreak(streak: StreakData): number {
+  const t = today();
+  if (streak.breakDates.length === 0) return daysDiff(streak.startDate, t);
+  const sorted = [...streak.breakDates].sort();
+  const intervals = [
+    daysDiff(streak.startDate, sorted[0]),
+    ...sorted.slice(1).map((d, i) => daysDiff(sorted[i], d)),
+    daysDiff(sorted[sorted.length - 1], t),
+  ];
+  return Math.max(...intervals);
+}
+
 export default function StreakDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -32,6 +51,7 @@ export default function StreakDetailPage() {
   }
 
   const currentDays = getCurrentStreak(streak);
+  const maxDays = getMaxStreak(streak);
   const sortedBreaks = [...streak.breakDates].sort().reverse();
 
   return (
@@ -60,6 +80,12 @@ export default function StreakDetailPage() {
           <span>Total breaks: </span>
           <span style={{ color: streak.breakDates.length > 0 ? 'var(--accent-danger)' : 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>
             {streak.breakDates.length}
+          </span>
+        </div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+          <span>Max streak: </span>
+          <span style={{ color: 'var(--accent-warn)', fontFamily: 'JetBrains Mono, monospace' }}>
+            {maxDays} days
           </span>
         </div>
       </div>
@@ -108,10 +134,18 @@ export default function StreakDetailPage() {
                   borderRadius: '8px',
                 }}
               >
-                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem', color: 'var(--accent-danger)' }}>
-                  {formatDisplayDate(d)} &nbsp;
-                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>({d})</span>
-                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.875rem', color: 'var(--accent-danger)' }}>
+                    {formatDisplayDate(d)} &nbsp;
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>({d})</span>
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    streak at break:&nbsp;
+                    <span style={{ color: 'var(--accent-warn)', fontFamily: 'JetBrains Mono, monospace' }}>
+                      {getStreakAtBreak(streak, d)} days
+                    </span>
+                  </span>
+                </div>
                 <button
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }}
                   onClick={() => removeBreakDate(streak.id, d)}
