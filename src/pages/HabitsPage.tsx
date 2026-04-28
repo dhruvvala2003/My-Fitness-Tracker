@@ -1,10 +1,16 @@
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import ProgressCard from '../components/ProgressCard';
+import LoginPromptModal from '../components/LoginPromptModal';
 import { today, getCurrentMonthDays, formatDisplayDate } from '../utils/dateHelpers';
 
 export default function HabitsPage() {
   const { data, loading, toggleHabitCheck } = useAppData();
+  const { user } = useAuth();
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
   const { columns, checks } = data.habits;
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
   const visibleIndices = columns.map((_, i) => i).filter(i => !hiddenColumns.includes(i));
@@ -42,6 +48,13 @@ export default function HabitsPage() {
 
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to track your habits. Sign in to start checking off your daily goals!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <h1 className="page-title">Habits</h1>
       <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
         {monthLabel}
@@ -82,7 +95,10 @@ export default function HabitsPage() {
                       <td key={colIdx}>
                         <button
                           className={`check-btn${checked ? ' checked' : ''}`}
-                          onClick={() => !isFuture && toggleHabitCheck(dateStr, colIdx)}
+                          onClick={() => {
+                            if (!user) { setShowLoginPrompt(true); return; }
+                            if (!isFuture) toggleHabitCheck(dateStr, colIdx);
+                          }}
                           disabled={isFuture}
                           aria-label={checked ? 'Uncheck' : 'Check'}
                         >
@@ -100,7 +116,9 @@ export default function HabitsPage() {
 
       {columns.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'center' }}>
-          No habit columns yet. Go to Settings to add some.
+          {user
+            ? 'No habit columns yet. Go to Settings to add some.'
+            : 'Sign in to create and track your habits.'}
         </p>
       )}
       {columns.length > 0 && visibleIndices.length === 0 && (

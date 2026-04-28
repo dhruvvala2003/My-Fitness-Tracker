@@ -1,31 +1,61 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth, checkUserApproval, ADMIN_EMAIL } from '../context/AuthContext';
 
 export default function AuthPage() {
-  const [email, setEmail] = useState('');
+  const { authError, clearAuthError } = useAuth();
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [mode, setMode]         = useState<'signin' | 'signup'>('signin');
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [success, setSuccess]   = useState<string | null>(null);
+
+  // Pick up approval/deactivation errors set by AuthContext (e.g. on page load)
+  useEffect(() => {
+    if (authError) {
+      setError(authError);
+      clearAuthError();
+    }
+  }, [authError, clearAuthError]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
     setLoading(true);
+
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setSuccess('Account created! Check your email to confirm, then sign in.');
+        const { error: signUpErr, data } = await supabase.auth.signUp({ email, password });
+        if (signUpErr) throw signUpErr;
+
+        // If email-confirmation is disabled Supabase auto-signs the user in —
+        // sign them back out immediately so they must wait for admin approval.
+        if (data.session) await supabase.auth.signOut();
+
+        setSuccess(
+          'Account created! Your request is pending admin approval. ' +
+          'You will be able to sign in once the admin approves your account.',
+        );
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error: signInErr, data } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInErr) throw signInErr;
+
+        // Approval gate — check immediately so the user gets instant feedback
+        const u = data.user;
+        if (u && u.email !== ADMIN_EMAIL) {
+          const { allowed, message } = await checkUserApproval(u.id, u.email ?? '');
+          if (!allowed) {
+            await supabase.auth.signOut();
+            throw new Error(message);
+          }
+        }
+        // If approved, onAuthStateChange in AuthContext sets user → App navigates to "/"
       }
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +85,7 @@ export default function AuthPage() {
             type="email"
             placeholder="Email"
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={e => { setEmail(e.target.value); setError(null); }}
             required
             autoComplete="email"
           />
@@ -64,19 +94,19 @@ export default function AuthPage() {
             type="password"
             placeholder="Password (min 6 chars)"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={e => { setPassword(e.target.value); setError(null); }}
             required
             minLength={6}
             autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
           />
 
           {error && (
-            <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px' }}>
+            <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
               {error}
             </p>
           )}
           {success && (
-            <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(0,255,157,0.08)', borderRadius: '8px' }}>
+            <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(0,255,157,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
               {success}
             </p>
           )}

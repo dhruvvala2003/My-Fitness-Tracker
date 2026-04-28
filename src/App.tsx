@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import Layout from './components/Layout';
@@ -13,6 +13,7 @@ import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
 import InsightsPage from './pages/InsightsPage';
 import VideosPage from './pages/VideosPage';
+import AdminPage from './pages/AdminPage';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -25,24 +26,31 @@ function AppRoutes() {
     );
   }
 
-  if (!user) return <AuthPage />;
-
   return (
     <DataProvider>
-      <Layout>
-        <Routes>
-          <Route path="/"            element={<HomePage />} />
-          <Route path="/habits"      element={<HabitsPage />} />
-          <Route path="/streaks"     element={<StreaksPage />} />
-          <Route path="/streaks/:id" element={<StreakDetailPage />} />
-          <Route path="/calories"    element={<CaloriesPage />} />
-          <Route path="/charts"      element={<ChartsPage />} />
-          <Route path="/settings"    element={<SettingsPage />} />
-          <Route path="/contact"     element={<ContactPage />} />
-          <Route path="/insights"   element={<InsightsPage />} />
-          <Route path="/videos"     element={<VideosPage />} />
-        </Routes>
-      </Layout>
+      <Routes>
+        {/* Login page — redirect to home if already signed in */}
+        <Route path="/login" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
+
+        {/* All other pages are always accessible (auth enforced per-action) */}
+        <Route path="*" element={
+          <Layout>
+            <Routes>
+              <Route path="/"            element={<HomePage />} />
+              <Route path="/habits"      element={<HabitsPage />} />
+              <Route path="/streaks"     element={<StreaksPage />} />
+              <Route path="/streaks/:id" element={<StreakDetailPage />} />
+              <Route path="/calories"    element={<CaloriesPage />} />
+              <Route path="/charts"      element={<ChartsPage />} />
+              <Route path="/settings"    element={<SettingsPage />} />
+              <Route path="/contact"     element={<ContactPage />} />
+              <Route path="/insights"    element={<InsightsPage />} />
+              <Route path="/videos"      element={<VideosPage />} />
+              <Route path="/admin"       element={<AdminPage />} />
+            </Routes>
+          </Layout>
+        } />
+      </Routes>
     </DataProvider>
   );
 }

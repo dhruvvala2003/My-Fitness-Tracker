@@ -1,20 +1,30 @@
 import { useState } from 'react';
-import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
+import { useNavigate } from 'react-router-dom';
 
 export default function SettingsPage() {
   const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility } = useAppData();
   const { signOut, user } = useAuth();
+  const navigate = useNavigate();
   const [newCol, setNewCol] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const columns = data.habits.columns;
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
 
   function isHidden(idx: number) { return hiddenColumns.includes(idx); }
 
+  function requireAuth(action: () => void) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    action();
+  }
+
   async function handleAddColumn() {
+    if (!user) { setShowLoginPrompt(true); return; }
     const name = newCol.trim();
     if (!name || columns.length >= 4) return;
     await addHabitColumn(name);
@@ -23,6 +33,13 @@ export default function SettingsPage() {
 
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to manage your settings. Sign in to customise your habit columns and preferences!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <h1 className="page-title">Settings</h1>
 
       {/* ── Habit Columns ── */}
@@ -41,7 +58,7 @@ export default function SettingsPage() {
 
                 {/* Visibility toggle */}
                 <button
-                  onClick={() => toggleColumnVisibility(i)}
+                  onClick={() => requireAuth(() => toggleColumnVisibility(i))}
                   title={hidden ? 'Show column' : 'Hide column'}
                   style={{
                     flexShrink: 0,
@@ -62,7 +79,7 @@ export default function SettingsPage() {
                 <input
                   className="input"
                   value={col}
-                  onChange={e => renameHabitColumn(i, e.target.value)}
+                  onChange={e => requireAuth(() => renameHabitColumn(i, e.target.value))}
                   maxLength={30}
                   style={{ opacity: hidden ? 0.45 : 1, transition: 'opacity 160ms' }}
                 />
@@ -85,7 +102,7 @@ export default function SettingsPage() {
                 <button
                   className="btn-danger"
                   style={{ padding: '0.5rem', flexShrink: 0 }}
-                  onClick={() => deleteHabitColumn(i)}
+                  onClick={() => requireAuth(() => deleteHabitColumn(i))}
                   title="Permanently delete column"
                 >
                   <Trash2 size={15} />
@@ -94,7 +111,9 @@ export default function SettingsPage() {
             );
           })}
           {columns.length === 0 && (
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No columns. Add one below.</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+              {user ? 'No columns. Add one below.' : 'Sign in to create and manage your habit columns.'}
+            </p>
           )}
         </div>
 
@@ -121,13 +140,26 @@ export default function SettingsPage() {
       {/* ── Account ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Account</p>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Signed in as <span style={{ color: 'var(--text-primary)' }}>{user?.email}</span>.
-          Your data syncs automatically across all devices.
-        </p>
-        <button className="btn-secondary" onClick={signOut}>
-          <LogOut size={15} /> Sign Out
-        </button>
+        {user ? (
+          <>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              Signed in as <span style={{ color: 'var(--text-primary)' }}>{user.email}</span>.
+              Your data syncs automatically across all devices.
+            </p>
+            <button className="btn-secondary" onClick={signOut}>
+              <LogOut size={15} /> Sign Out
+            </button>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              You are not signed in. Sign in to save your data and sync across all devices.
+            </p>
+            <button className="btn-primary" onClick={() => navigate('/login')}>
+              <LogIn size={15} /> Sign In
+            </button>
+          </>
+        )}
       </div>
 
       {/* ── Danger zone ── */}
@@ -144,17 +176,17 @@ export default function SettingsPage() {
             <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Are you sure?</span>
             <button
               className="btn-danger"
-              onClick={async () => {
+              onClick={() => requireAuth(async () => {
                 for (let i = columns.length - 1; i >= 0; i--) await deleteHabitColumn(i);
                 setConfirmClear(false);
-              }}
+              })}
             >
               Yes, delete all
             </button>
             <button className="btn-secondary" onClick={() => setConfirmClear(false)}>Cancel</button>
           </div>
         ) : (
-          <button className="btn-danger" onClick={() => setConfirmClear(true)}>
+          <button className="btn-danger" onClick={() => requireAuth(() => setConfirmClear(true))}>
             <Trash2 size={15} /> Delete All Columns
           </button>
         )}

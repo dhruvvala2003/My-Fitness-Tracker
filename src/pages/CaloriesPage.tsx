@@ -2,13 +2,17 @@ import { useState, useRef } from 'react';
 import { Upload, Zap, Edit2, Plus, Trash2, RefreshCw } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
 import type { CalorieEntry } from '../types';
 import { today } from '../utils/dateHelpers';
 import { analyzeFood, fileToBase64 } from '../utils/aiCalories';
 
 export default function CaloriesPage() {
   const { data, logMeal, deleteMeal } = useAppData();
+  const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string>('');
@@ -60,6 +64,7 @@ export default function CaloriesPage() {
   }
 
   async function handleLogMeal() {
+    if (!user) { setShowLoginPrompt(true); return; }
     if (estimatedCal === null) return;
     const entry: CalorieEntry = {
       id: uuidv4(),
@@ -78,8 +83,25 @@ export default function CaloriesPage() {
     setEditingGrams(false);
   }
 
+  function handleDropzoneClick() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    fileRef.current?.click();
+  }
+
+  function handleDeleteMeal(id: string) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    deleteMeal(id);
+  }
+
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to log your calories. Sign in to start tracking your nutrition!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <h1 className="page-title">Calories</h1>
 
       {/* Stats */}
@@ -101,9 +123,14 @@ export default function CaloriesPage() {
 
         <div
           className="dropzone"
-          onClick={() => fileRef.current?.click()}
+          onClick={handleDropzoneClick}
           onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileChange(f); }}
+          onDrop={e => {
+            e.preventDefault();
+            if (!user) { setShowLoginPrompt(true); return; }
+            const f = e.dataTransfer.files[0];
+            if (f) handleFileChange(f);
+          }}
         >
           {imagePreview ? (
             <img src={imagePreview} alt="Food" style={{ maxHeight: '200px', maxWidth: '100%', borderRadius: '8px', objectFit: 'contain' }} />
@@ -193,7 +220,9 @@ export default function CaloriesPage() {
       <div className="card">
         <p style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Today's Log</p>
         {todayLog.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No meals logged today.</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+            {user ? 'No meals logged today.' : 'Sign in to log and track your meals.'}
+          </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {todayLog.map(entry => (
@@ -204,7 +233,7 @@ export default function CaloriesPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                   <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-primary)', fontWeight: 600 }}>{entry.calories} kcal</span>
-                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }} onClick={() => deleteMeal(entry.id)}>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }} onClick={() => handleDeleteMeal(entry.id)}>
                     <Trash2 size={15} />
                   </button>
                 </div>

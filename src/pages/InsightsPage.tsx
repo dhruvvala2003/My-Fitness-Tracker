@@ -2,6 +2,8 @@ import { useState, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { Plus, Search, X, Star, BookOpen, AlertTriangle, ThumbsUp, ThumbsDown, Trash2, SlidersHorizontal } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
 import { today } from '../utils/dateHelpers';
 import type { InsightEntry } from '../types';
 
@@ -74,7 +76,9 @@ function StarRating({
 
 export default function InsightsPage() {
   const { data, loading, addInsight, deleteInsight, updateInsightRating } = useAppData();
+  const { user } = useAuth();
   const insights = data.insights ?? [];
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const [tab, setTab] = useState<Tab>('all');
   const [search, setSearch] = useState('');
@@ -98,8 +102,14 @@ export default function InsightsPage() {
     });
   }, [insights, tab, filterRating, filterDate, search]);
 
+  function handleAddClick() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    setShowForm(v => !v);
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!user) { setShowLoginPrompt(true); return; }
     if (!formText.trim()) return;
     addInsight({
       id: uuidv4(),
@@ -134,10 +144,17 @@ export default function InsightsPage() {
 
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to add or manage insights. Sign in to start journaling your daily reflections!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
         <h1 className="page-title" style={{ margin: 0 }}>Daily Insights</h1>
-        <button className="insights-add-btn" onClick={() => setShowForm(v => !v)}>
+        <button className="insights-add-btn" onClick={handleAddClick}>
           {showForm ? <X size={18} /> : <Plus size={18} />}
           <span>{showForm ? 'Cancel' : 'Add'}</span>
         </button>
@@ -284,7 +301,7 @@ export default function InsightsPage() {
         {filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
             {insights.length === 0
-              ? 'No insights yet. Hit Add to log your first entry.'
+              ? (user ? 'No insights yet. Hit Add to log your first entry.' : 'Sign in to start logging your daily insights.')
               : 'No entries match your filters.'}
           </div>
         ) : (
@@ -292,8 +309,14 @@ export default function InsightsPage() {
             <InsightCard
               key={entry.id}
               entry={entry}
-              onDelete={() => deleteInsight(entry.id)}
-              onRatingChange={r => updateInsightRating(entry.id, r)}
+              onDelete={() => {
+                if (!user) { setShowLoginPrompt(true); return; }
+                deleteInsight(entry.id);
+              }}
+              onRatingChange={r => {
+                if (!user) { setShowLoginPrompt(true); return; }
+                updateInsightRating(entry.id, r);
+              }}
             />
           ))
         )}

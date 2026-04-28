@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Flame, Plus, ChevronRight, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
 import type { StreakData } from '../types';
 import { today, daysDiff, formatFullDate } from '../utils/dateHelpers';
 
@@ -20,10 +22,12 @@ function getSinceDate(streak: StreakData): string {
 
 export default function StreaksPage() {
   const { data, addStreak, deleteStreak } = useAppData();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(today());
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   async function handleAddStreak() {
     if (!name.trim()) return;
@@ -34,11 +38,33 @@ export default function StreaksPage() {
     setShowForm(false);
   }
 
+  function handleNewStreakClick() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    setShowForm(v => !v);
+  }
+
+  function handleDeleteStreak(id: string) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    deleteStreak(id);
+  }
+
+  function handleViewStreak(id: string) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    navigate(`/streaks/${id}`);
+  }
+
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to manage your streaks. Sign in to start tracking your consistency!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
         <h1 className="page-title" style={{ marginBottom: 0 }}>Streaks</h1>
-        <button className="btn-primary" onClick={() => setShowForm(v => !v)}>
+        <button className="btn-primary" onClick={handleNewStreakClick}>
           <Plus size={16} /> New Streak
         </button>
       </div>
@@ -75,7 +101,7 @@ export default function StreaksPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         {data.streaks.length === 0 && (
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginTop: '2rem' }}>
-            No streaks yet. Add one to start tracking.
+            {user ? 'No streaks yet. Add one to start tracking.' : 'Sign in to create and track your streaks.'}
           </p>
         )}
         {data.streaks.map(streak => {
@@ -103,7 +129,7 @@ export default function StreaksPage() {
                   <button
                     className="btn-secondary"
                     style={{ padding: '0.4rem 0.6rem' }}
-                    onClick={() => navigate(`/streaks/${streak.id}`)}
+                    onClick={() => handleViewStreak(streak.id)}
                     title="View details / log break"
                   >
                     <ChevronRight size={16} />
@@ -111,7 +137,7 @@ export default function StreaksPage() {
                   <button
                     className="btn-danger"
                     style={{ padding: '0.4rem 0.6rem' }}
-                    onClick={() => deleteStreak(streak.id)}
+                    onClick={() => handleDeleteStreak(streak.id)}
                     title="Delete streak"
                   >
                     <Trash2 size={16} />

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Plus, Play, Trash2, Video, X, Upload, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
 
 const CATEGORIES = ['Chest', 'Back', 'Legs', 'Arms', 'Core', 'Abs', 'Cardio', 'Stretching', 'Other'];
 const ALL_FILTERS = ['All', ...CATEGORIES];
@@ -37,6 +38,7 @@ export default function VideosPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function loadVideos() {
@@ -62,6 +64,12 @@ export default function VideosPage() {
     if (error || !data) { setError('Could not load video.'); return; }
     setPlayingUrl(data.signedUrl);
     setPlayingId(video.id);
+  }
+
+  function handleAddVideoClick() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    setShowForm(s => !s);
+    setError(null);
   }
 
   async function handleUpload() {
@@ -109,6 +117,7 @@ export default function VideosPage() {
   }
 
   async function handleDelete(video: VideoMeta) {
+    if (!user) { setShowLoginPrompt(true); return; }
     await supabase.storage.from(BUCKET).remove([video.file_path]);
     await supabase.from('exercise_videos').delete().eq('id', video.id);
     if (playingId === video.id) {
@@ -122,9 +131,16 @@ export default function VideosPage() {
 
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to upload or manage videos. Sign in to add your exercise library!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Exercise Videos</h1>
-        <button className="btn-primary" onClick={() => { setShowForm(s => !s); setError(null); }}>
+        <button className="btn-primary" onClick={handleAddVideoClick}>
           <Plus size={16} /> Add Video
         </button>
       </div>
@@ -236,7 +252,7 @@ export default function VideosPage() {
           <Video size={44} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
             {videos.length === 0
-              ? 'No videos yet — add your first exercise video.'
+              ? 'No videos yet — sign in and add your first exercise video.'
               : 'No videos in this category.'}
           </p>
         </div>
@@ -288,7 +304,7 @@ export default function VideosPage() {
                     {playingId === v.id ? <X size={14} /> : <Play size={14} />}
                     {playingId === v.id ? 'Close' : 'Play'}
                   </button>
-                  {v.uploaded_by === user?.id && (
+                  {user && v.uploaded_by === user.id && (
                     <button
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '0.4rem' }}
                       onClick={() => handleDelete(v)}

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Flame } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
+import LoginPromptModal from '../components/LoginPromptModal';
 import type { StreakData } from '../types';
 import { today, daysDiff, formatFullDate, formatDisplayDate } from '../utils/dateHelpers';
 
@@ -35,7 +37,9 @@ export default function StreakDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data, logBreakDate, removeBreakDate } = useAppData();
+  const { user } = useAuth();
   const [breakDate, setBreakDate] = useState(today());
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const streak = data.streaks.find(s => s.id === id);
 
@@ -54,8 +58,25 @@ export default function StreakDetailPage() {
   const maxDays = getMaxStreak(streak);
   const sortedBreaks = [...streak.breakDates].sort().reverse();
 
+  function handleLogBreak() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    logBreakDate(streak!.id, breakDate);
+  }
+
+  function handleRemoveBreak(d: string) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    removeBreakDate(streak!.id, d);
+  }
+
   return (
     <div className="page">
+      {showLoginPrompt && (
+        <LoginPromptModal
+          message="You need to be signed in to log or remove break dates. Sign in to manage your streak history!"
+          onClose={() => setShowLoginPrompt(false)}
+        />
+      )}
+
       <button className="btn-secondary" style={{ marginBottom: '1.5rem' }} onClick={() => navigate('/streaks')}>
         <ArrowLeft size={16} /> Back to Streaks
       </button>
@@ -105,7 +126,7 @@ export default function StreakDetailPage() {
             max={today()}
             onChange={e => setBreakDate(e.target.value)}
           />
-          <button className="btn-danger" onClick={() => logBreakDate(streak.id, breakDate)}>
+          <button className="btn-danger" onClick={handleLogBreak}>
             <Plus size={16} /> Log Break
           </button>
         </div>
@@ -148,7 +169,7 @@ export default function StreakDetailPage() {
                 </div>
                 <button
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }}
-                  onClick={() => removeBreakDate(streak.id, d)}
+                  onClick={() => handleRemoveBreak(d)}
                   title="Remove this break"
                 >
                   <Trash2 size={15} />
