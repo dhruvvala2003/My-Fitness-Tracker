@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, X, UserCheck, UserX, Clock, RefreshCw } from 'lucide-react';
+import { UserCheck, UserX, Clock, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, ADMIN_EMAIL } from '../context/AuthContext';
 
@@ -61,7 +61,7 @@ export default function AdminPage() {
     setLoading(false);
   }
 
-  async function setStatus(userId: string, status: 'approved' | 'inactive' | 'pending') {
+  async function setStatus(userId: string, status: 'approved' | 'inactive') {
     setUpdating(userId);
     await supabase
       .from('user_approvals')
@@ -69,6 +69,19 @@ export default function AdminPage() {
       .eq('user_id', userId);
     setRecords(prev =>
       prev.map(r => r.user_id === userId ? { ...r, status, updated_at: new Date().toISOString() } : r),
+    );
+    setUpdating(null);
+  }
+
+  async function removeUser(userId: string) {
+    if (!confirm('Remove this user? They will not be able to log in. You can re-approve them later.')) return;
+    setUpdating(userId);
+    await supabase
+      .from('user_approvals')
+      .update({ status: 'inactive', updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    setRecords(prev =>
+      prev.map(r => r.user_id === userId ? { ...r, status: 'inactive', updated_at: new Date().toISOString() } : r),
     );
     setUpdating(null);
   }
@@ -170,46 +183,29 @@ export default function AdminPage() {
                     </div>
                   </div>
 
-                  {/* Action buttons */}
+                  {/* Action buttons:
+                      pending  → [Approve] [Remove]
+                      approved → [Remove]
+                      inactive → [Approve]            */}
                   <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0, flexWrap: 'wrap' }}>
-                    {r.status === 'pending' && (
-                      <>
-                        <button
-                          className="btn-primary"
-                          style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem' }}
-                          disabled={busy}
-                          onClick={() => setStatus(r.user_id, 'approved')}
-                        >
-                          <Check size={13} /> Approve
-                        </button>
-                        <button
-                          className="btn-danger"
-                          style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem' }}
-                          disabled={busy}
-                          onClick={() => setStatus(r.user_id, 'inactive')}
-                        >
-                          <X size={13} /> Reject
-                        </button>
-                      </>
-                    )}
-                    {r.status === 'approved' && (
+                    {r.status !== 'approved' && (
                       <button
-                        className="btn-danger"
-                        style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem' }}
-                        disabled={busy}
-                        onClick={() => setStatus(r.user_id, 'inactive')}
-                      >
-                        <UserX size={13} /> Deactivate
-                      </button>
-                    )}
-                    {r.status === 'inactive' && (
-                      <button
-                        className="btn-secondary"
+                        className="btn-primary"
                         style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem' }}
                         disabled={busy}
                         onClick={() => setStatus(r.user_id, 'approved')}
                       >
-                        <UserCheck size={13} /> Reactivate
+                        <UserCheck size={13} /> Approve
+                      </button>
+                    )}
+                    {r.status !== 'inactive' && (
+                      <button
+                        className="btn-danger"
+                        style={{ padding: '0.4rem 0.875rem', fontSize: '0.8rem' }}
+                        disabled={busy}
+                        onClick={() => removeUser(r.user_id)}
+                      >
+                        <UserX size={13} /> Remove
                       </button>
                     )}
                   </div>

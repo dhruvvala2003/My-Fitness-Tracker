@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, checkUserApproval, ADMIN_EMAIL } from '../context/AuthContext';
@@ -12,10 +12,17 @@ export default function AuthPage() {
   const [error, setError]       = useState<string | null>(null);
   const [success, setSuccess]   = useState<string | null>(null);
 
+  // Tracks when signup just completed so we don't show the AuthContext
+  // "pending approval" error on top of the success message.
+  const justSignedUp = useRef(false);
+
   // Pick up approval/deactivation errors set by AuthContext (e.g. on page load)
   useEffect(() => {
     if (authError) {
-      setError(authError);
+      if (!justSignedUp.current) {
+        setError(authError);
+      }
+      justSignedUp.current = false;
       clearAuthError();
     }
   }, [authError, clearAuthError]);
@@ -31,8 +38,20 @@ export default function AuthPage() {
         const { error: signUpErr, data } = await supabase.auth.signUp({ email, password });
         if (signUpErr) throw signUpErr;
 
-        // If email-confirmation is disabled Supabase auto-signs the user in —
-        // sign them back out immediately so they must wait for admin approval.
+        // Create pending approval record while user is still authenticated
+        if (data.user) {
+          const { error: upsertErr } = await supabase.from('user_approvals').upsert({
+            user_id: data.user.id,
+            email: email.toLowerCase().trim(),
+            status: 'pending',
+            requested_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'user_id' });
+          if (upsertErr) console.error('Approval record insert failed:', upsertErr);
+        }
+
+        // Sign back out immediately so they must wait for admin approval.
+        justSignedUp.current = true; // suppress the upcoming authError from AuthContext
         if (data.session) await supabase.auth.signOut();
 
         setSuccess(

@@ -16,7 +16,10 @@ export async function checkUserApproval(
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (!data) return { allowed: true }; // No record = pre-existing user = allow
+  if (!data) return {
+    allowed: false,
+    message: 'Your account is pending admin approval. Please wait — you will be able to sign in once the admin approves your request.',
+  };
   if (data.status === 'approved') return { allowed: true };
   if (data.status === 'pending') {
     return {
