@@ -21,7 +21,7 @@ export default function ContactPage() {
     <div className="page">
 
       {/* ── Header ── */}
-      <h1 className="page-title">About Me</h1>
+      <h1 className="page-title">About Developer</h1>
 
       {/* ── Profile card ── */}
       <div className="card" style={{ marginBottom: '1.25rem', position: 'relative', overflow: 'visible' }}>
@@ -121,7 +121,7 @@ export default function ContactPage() {
       {/* ── About / Bio ── */}
       <div className="card" style={{ marginBottom: '1.25rem', borderLeft: '3px solid var(--accent-primary)' }}>
         <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.75rem' }}>
-          👋 About Me
+          👋 About Developer
         </div>
         <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.75, marginBottom: '0.75rem' }}>
           Hey! I'm <strong style={{ color: 'var(--accent-primary)' }}>Dhruv</strong> — a passionate coder-in-learning who believes every bug is just a puzzle waiting to be solved. I built this fitness tracker from scratch to combine two things I love: <strong>coding</strong> and <strong>staying fit</strong>.

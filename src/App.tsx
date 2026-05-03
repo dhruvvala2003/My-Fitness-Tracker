@@ -14,6 +14,7 @@ import ContactPage from './pages/ContactPage';
 import InsightsPage from './pages/InsightsPage';
 import VideosPage from './pages/VideosPage';
 import AdminPage from './pages/AdminPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -31,6 +32,9 @@ function AppRoutes() {
       <Routes>
         {/* Login page — redirect to home if already signed in */}
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <AuthPage />} />
+
+        {/* Password reset — always accessible, handles the reset-link redirect */}
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         {/* All other pages are always accessible (auth enforced per-action) */}
         <Route path="*" element={

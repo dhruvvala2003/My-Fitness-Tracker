@@ -62,3 +62,22 @@ export function getWeekRangeLabel(): string {
 export function getCurrentMonthLabel(): string {
   return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
+
+export function getMonthDays(year: number, month: number): string[] {
+  const days = getDaysInMonth(year, month);
+  return Array.from({ length: days }, (_, i) =>
+    `${year}-${pad(month + 1)}-${pad(i + 1)}`
+  );
+}
+
+export function getMonthLabel(year: number, month: number): string {
+  return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+export function getPast30Days(): string[] {
+  return Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (29 - i));
+    return localStr(d);
+  });
+}

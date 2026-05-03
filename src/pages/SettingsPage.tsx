@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn, KeyRound } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
   const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility } = useAppData();
@@ -13,6 +14,14 @@ export default function SettingsPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
+  // Change password state
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+
   const columns = data.habits.columns;
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
 
@@ -21,6 +30,21 @@ export default function SettingsPage() {
   function requireAuth(action: () => void) {
     if (!user) { setShowLoginPrompt(true); return; }
     action();
+  }
+
+  async function handleChangePw(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    if (newPw.length < 6) { setPwError('Password must be at least 6 characters.'); return; }
+    if (newPw !== confirmPw) { setPwError('Passwords do not match.'); return; }
+    setPwLoading(true);
+    const { error } = await supabase.auth.updateUser({ password: newPw });
+    setPwLoading(false);
+    if (error) { setPwError(error.message); return; }
+    setPwSuccess(true);
+    setNewPw('');
+    setConfirmPw('');
+    setTimeout(() => { setPwSuccess(false); setShowChangePw(false); }, 2500);
   }
 
   async function handleAddColumn() {
@@ -146,9 +170,56 @@ export default function SettingsPage() {
               Signed in as <span style={{ color: 'var(--text-primary)' }}>{user.email}</span>.
               Your data syncs automatically across all devices.
             </p>
-            <button className="btn-secondary" onClick={signOut}>
-              <LogOut size={15} /> Sign Out
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn-secondary" onClick={signOut}>
+                <LogOut size={15} /> Sign Out
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => { setShowChangePw(v => !v); setPwError(null); setPwSuccess(false); }}
+              >
+                <KeyRound size={15} /> {showChangePw ? 'Cancel' : 'Change Password'}
+              </button>
+            </div>
+
+            {/* Change password inline form */}
+            {showChangePw && (
+              <form onSubmit={handleChangePw} style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="New password (min 6 chars)"
+                  value={newPw}
+                  onChange={e => { setNewPw(e.target.value); setPwError(null); }}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={confirmPw}
+                  onChange={e => { setConfirmPw(e.target.value); setPwError(null); }}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                />
+                {pwError && (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-danger)', padding: '0.5rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
+                    {pwError}
+                  </p>
+                )}
+                {pwSuccess && (
+                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-primary)', padding: '0.5rem', background: 'rgba(0,255,157,0.08)', borderRadius: '8px' }}>
+                    Password updated successfully.
+                  </p>
+                )}
+                <button className="btn-primary" type="submit" disabled={pwLoading} style={{ alignSelf: 'flex-start' }}>
+                  <KeyRound size={14} /> {pwLoading ? 'Updating…' : 'Update Password'}
+                </button>
+              </form>
+            )}
           </>
         ) : (
           <>

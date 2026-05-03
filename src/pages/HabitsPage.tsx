@@ -1,25 +1,44 @@
 import { useState } from 'react';
-import { Check } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import ProgressCard from '../components/ProgressCard';
 import LoginPromptModal from '../components/LoginPromptModal';
-import { today, getCurrentMonthDays, formatDisplayDate } from '../utils/dateHelpers';
+import { today, getMonthDays, getMonthLabel, formatDisplayDate } from '../utils/dateHelpers';
 
 export default function HabitsPage() {
   const { data, loading, toggleHabitCheck } = useAppData();
   const { user } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
+  const now = new Date();
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+
   const { columns, checks } = data.habits;
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
   const visibleIndices = columns.map((_, i) => i).filter(i => !hiddenColumns.includes(i));
   const todayStr = today();
-  const days = getCurrentMonthDays();
 
-  const now = new Date();
-  const currentDay = now.getDate();
-  const elapsedDays = days.slice(0, currentDay);
+  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+  const days = getMonthDays(viewYear, viewMonth);
+  const elapsedDays = isCurrentMonth ? days.slice(0, now.getDate()) : days;
+
+  function canGoNext() {
+    if (viewYear < now.getFullYear()) return true;
+    return viewYear === now.getFullYear() && viewMonth < now.getMonth();
+  }
+
+  function goPrev() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
+    else setViewMonth(m => m - 1);
+  }
+
+  function goNext() {
+    if (!canGoNext()) return;
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
+    else setViewMonth(m => m + 1);
+  }
 
   function colProgress(colIdx: number) {
     const checked = elapsedDays.filter(d => checks[d]?.[colIdx]).length;
@@ -36,7 +55,10 @@ export default function HabitsPage() {
     return (checked / total) * 100;
   }
 
-  const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const monthLabel = getMonthLabel(viewYear, viewMonth);
+  const progressDetail = isCurrentMonth
+    ? `Day ${now.getDate()} of ${days.length}`
+    : `${days.length} days`;
 
   if (loading) {
     return (
@@ -56,16 +78,31 @@ export default function HabitsPage() {
       )}
 
       <h1 className="page-title">Habits</h1>
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
-        {monthLabel}
-      </p>
+
+      {/* Month navigation */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <button className="btn-secondary" style={{ padding: '0.3rem 0.5rem' }} onClick={goPrev}>
+          <ChevronLeft size={16} />
+        </button>
+        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', minWidth: '130px', textAlign: 'center' }}>
+          {monthLabel}
+        </span>
+        <button
+          className="btn-secondary"
+          style={{ padding: '0.3rem 0.5rem', opacity: canGoNext() ? 1 : 0.3, cursor: canGoNext() ? 'pointer' : 'default' }}
+          onClick={goNext}
+          disabled={!canGoNext()}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
 
       {/* Progress cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <ProgressCard
           label="Overall"
           value={overallProgress()}
-          detail={`Day ${currentDay} of ${days.length}`}
+          detail={progressDetail}
         />
         {visibleIndices.map(i => (
           <ProgressCard key={i} label={columns[i]} value={colProgress(i)} />

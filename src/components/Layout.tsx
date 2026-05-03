@@ -11,7 +11,7 @@ const NAV = [
   { to: '/videos',   icon: Video,     label: 'Videos',   end: true  },
   { to: '/charts',   icon: BarChart2, label: 'Charts',   end: true  },
   { to: '/settings', icon: Settings,  label: 'Settings', end: true  },
-  { to: '/contact',  icon: User,      label: 'About Me', end: true  },
+  { to: '/contact',  icon: User,      label: 'About Developer', end: true  },
 ];
 
 // Bottom nav excludes Charts + About Me (sidebar-only on desktop); Videos stays in for workout access

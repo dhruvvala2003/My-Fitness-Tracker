@@ -3,29 +3,32 @@ import { Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth, checkUserApproval, ADMIN_EMAIL } from '../context/AuthContext';
 
+type Mode = 'signin' | 'signup' | 'forgot';
+
 export default function AuthPage() {
   const { authError, clearAuthError } = useAuth();
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode]         = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode]         = useState<Mode>('signin');
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [success, setSuccess]   = useState<string | null>(null);
 
-  // Tracks when signup just completed so we don't show the AuthContext
-  // "pending approval" error on top of the success message.
   const justSignedUp = useRef(false);
 
-  // Pick up approval/deactivation errors set by AuthContext (e.g. on page load)
   useEffect(() => {
     if (authError) {
-      if (!justSignedUp.current) {
-        setError(authError);
-      }
+      if (!justSignedUp.current) setError(authError);
       justSignedUp.current = false;
       clearAuthError();
     }
   }, [authError, clearAuthError]);
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError(null);
+    setSuccess(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,11 +37,16 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      if (mode === 'signup') {
+      if (mode === 'forgot') {
+        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (resetErr) throw resetErr;
+        setSuccess('Check your inbox — we sent a password reset link to ' + email.trim().toLowerCase() + '.');
+      } else if (mode === 'signup') {
         const { error: signUpErr, data } = await supabase.auth.signUp({ email, password });
         if (signUpErr) throw signUpErr;
 
-        // Create pending approval record while user is still authenticated
         if (data.user) {
           const { error: upsertErr } = await supabase.from('user_approvals').upsert({
             user_id: data.user.id,
@@ -50,8 +58,7 @@ export default function AuthPage() {
           if (upsertErr) console.error('Approval record insert failed:', upsertErr);
         }
 
-        // Sign back out immediately so they must wait for admin approval.
-        justSignedUp.current = true; // suppress the upcoming authError from AuthContext
+        justSignedUp.current = true;
         if (data.session) await supabase.auth.signOut();
 
         setSuccess(
@@ -62,7 +69,6 @@ export default function AuthPage() {
         const { error: signInErr, data } = await supabase.auth.signInWithPassword({ email, password });
         if (signInErr) throw signInErr;
 
-        // Approval gate — check immediately so the user gets instant feedback
         const u = data.user;
         if (u && u.email !== ADMIN_EMAIL) {
           const { allowed, message } = await checkUserApproval(u.id, u.email ?? '');
@@ -71,7 +77,6 @@ export default function AuthPage() {
             throw new Error(message);
           }
         }
-        // If approved, onAuthStateChange in AuthContext sets user → App navigates to "/"
       }
     } catch (err) {
       setError((err as Error).message);
@@ -79,6 +84,12 @@ export default function AuthPage() {
       setLoading(false);
     }
   }
+
+  const titles: Record<Mode, string> = {
+    signin: 'Sign in to your account',
+    signup: 'Create your account',
+    forgot: 'Reset your password',
+  };
 
   return (
     <div style={{
@@ -95,7 +106,7 @@ export default function AuthPage() {
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>FitTrack</h1>
         </div>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.875rem' }}>
-          {mode === 'signin' ? 'Sign in to your account' : 'Create your account'}
+          {titles[mode]}
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -108,16 +119,32 @@ export default function AuthPage() {
             required
             autoComplete="email"
           />
-          <input
-            className="input"
-            type="password"
-            placeholder="Password (min 6 chars)"
-            value={password}
-            onChange={e => { setPassword(e.target.value); setError(null); }}
-            required
-            minLength={6}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          />
+
+          {mode !== 'forgot' && (
+            <input
+              className="input"
+              type="password"
+              placeholder="Password (min 6 chars)"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(null); }}
+              required
+              minLength={6}
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            />
+          )}
+
+          {/* Forgot password link — only in signin mode */}
+          {mode === 'signin' && (
+            <div style={{ textAlign: 'right', marginTop: '-0.25rem' }}>
+              <button
+                type="button"
+                onClick={() => switchMode('forgot')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.78rem', padding: 0 }}
+              >
+                Forgot password?
+              </button>
+            </div>
+          )}
 
           {error && (
             <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
@@ -136,19 +163,35 @@ export default function AuthPage() {
             disabled={loading}
             style={{ width: '100%', justifyContent: 'center', marginTop: '0.25rem' }}
           >
-            {loading ? 'Please wait…' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
+            {loading
+              ? 'Please wait…'
+              : mode === 'signin' ? 'Sign In'
+              : mode === 'signup' ? 'Sign Up'
+              : 'Send Reset Link'}
           </button>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-          {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
-          <button
-            onClick={() => { setMode(m => m === 'signin' ? 'signup' : 'signin'); setError(null); setSuccess(null); }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '0.875rem' }}
-          >
-            {mode === 'signin' ? 'Sign Up' : 'Sign In'}
-          </button>
-        </p>
+        {/* Bottom navigation links */}
+        <div style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+          {mode === 'forgot' ? (
+            <button
+              onClick={() => switchMode('signin')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '0.875rem' }}
+            >
+              Back to Sign In
+            </button>
+          ) : (
+            <>
+              {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+              <button
+                onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary)', fontWeight: 600, fontSize: '0.875rem' }}
+              >
+                {mode === 'signin' ? 'Sign Up' : 'Sign In'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
