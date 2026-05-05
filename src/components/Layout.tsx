@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Calendar, Flame, Zap, BarChart2, Settings, User, Lightbulb, Video, LogIn, LogOut, Shield } from 'lucide-react';
+import { Home, Calendar, Flame, Zap, BarChart2, Settings, User, Lightbulb, Video, Dumbbell, LogIn, LogOut, Shield } from 'lucide-react';
 import { useAuth, ADMIN_EMAIL } from '../context/AuthContext';
 
 const NAV = [
@@ -8,8 +8,9 @@ const NAV = [
   { to: '/streaks',  icon: Flame,     label: 'Streaks',  end: false },
   { to: '/calories', icon: Zap,       label: 'Calories', end: true  },
   { to: '/insights', icon: Lightbulb, label: 'Insights', end: true  },
-  { to: '/videos',   icon: Video,     label: 'Videos',   end: true  },
-  { to: '/charts',   icon: BarChart2, label: 'Charts',   end: true  },
+  { to: '/videos',     icon: Video,     label: 'Videos',    end: true  },
+  { to: '/exercises',  icon: Dumbbell,  label: 'Exercises', end: true  },
+  { to: '/charts',     icon: BarChart2, label: 'Charts',    end: true  },
   { to: '/settings', icon: Settings,  label: 'Settings', end: true  },
   { to: '/contact',  icon: User,      label: 'About Developer', end: true  },
 ];

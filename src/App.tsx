@@ -13,6 +13,7 @@ import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
 import InsightsPage from './pages/InsightsPage';
 import VideosPage from './pages/VideosPage';
+import ExercisesPage from './pages/ExercisesPage';
 import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
@@ -50,6 +51,7 @@ function AppRoutes() {
               <Route path="/contact"     element={<ContactPage />} />
               <Route path="/insights"    element={<InsightsPage />} />
               <Route path="/videos"      element={<VideosPage />} />
+              <Route path="/exercises"   element={<ExercisesPage />} />
               <Route path="/admin"       element={<AdminPage />} />
             </Routes>
           </Layout>

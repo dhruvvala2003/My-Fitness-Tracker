@@ -884,3 +884,34 @@ body {
 }
 
 .quick-nav-card:active { transform: translateY(-1px); }
+
+/* ── Exercises Page ── */
+.exercise-thumb {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.exercise-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0);
+  transition: background 200ms ease;
+}
+
+.exercise-thumb:hover::after { background: rgba(0,0,0,0.38); }
+
+.exercise-zoom-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
+.exercise-thumb:hover .exercise-zoom-icon { opacity: 1; }
