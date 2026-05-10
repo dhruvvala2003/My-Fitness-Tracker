@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { X, Clock, Repeat, ZoomIn, Info } from 'lucide-react';
+import { X, Clock, Repeat, ZoomIn, Info, Search } from 'lucide-react';
 
 // ── Image base URL ──────────────────────────────────────────────────────────
-// Source: https://github.com/yuhonas/free-exercise-db (public domain)
 const IMG = (folder: string) =>
   `https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${folder}/0.jpg`;
 
@@ -21,77 +20,150 @@ const CAT_COLOR: Record<string, { text: string; bg: string; border: string }> = 
 const DEFAULT_COLOR = CAT_COLOR.Chest;
 
 // ── Exercise data ───────────────────────────────────────────────────────────
-// met: Metabolic Equivalent of Task (from Compendium of Physical Activities)
-// calsPerRep: estimated kcal per rep at 70 kg — scaled by actual weight at runtime
+//
+// Calorie model for REPS mode (strength training):
+//   kcal = sets × reps × (bodyFraction × bodyKg + loadKg) × burnCoeff
+//
+//   burnCoeff is derived from mechanical work studies (Robergs et al., ACSM):
+//     compound lifts  ≈ 0.005  (bench, squat, deadlift, rows, pull-ups)
+//     isolation lifts ≈ 0.003  (curls, tricep pushdown)
+//     explosive/full  ≈ 0.006+ (clean & jerk, box jump)
+//
+//   bodyFraction = portion of body weight actually moved against gravity
+//   isWeighted   = show a "load (kg)" input so the barbell/dumbbell weight is counted
+//   durationOnly = exercise is time-based (running, jump rope, plank) — hide reps toggle
+//
+// Calorie model for DURATION mode (cardio):
+//   kcal = MET × bodyKg × (minutes / 60)  — standard exercise-science formula, accurate
+//   for continuous movement (no rest periods), from Compendium of Physical Activities.
+
 interface Exercise {
   id: string;
   name: string;
   category: string;
   imgFolder: string;
   met: number;
-  calsPerRep: number;
+  bodyFraction: number;
+  isWeighted: boolean;
+  burnCoeff: number;
+  durationOnly?: boolean;
 }
 
 const EXERCISES: Exercise[] = [
   // ── Chest ──
-  { id: 'pushups',        name: 'Push-ups',        category: 'Chest',     imgFolder: 'Pushups',                             met: 3.8,  calsPerRep: 0.32 },
-  { id: 'bench-press',    name: 'Bench Press',      category: 'Chest',     imgFolder: 'Barbell_Bench_Press_-_Medium_Grip',   met: 5.0,  calsPerRep: 0.45 },
-  { id: 'decline-pushup', name: 'Decline Push-Up',  category: 'Chest',     imgFolder: 'Decline_Push-Up',                    met: 4.0,  calsPerRep: 0.35 },
+  { id: 'pushups',          name: 'Push-ups',           category: 'Chest',     imgFolder: 'Pushups',                                   met: 3.8,  bodyFraction: 0.64, isWeighted: false, burnCoeff: 0.005 },
+  { id: 'bench-press',      name: 'Bench Press',         category: 'Chest',     imgFolder: 'Barbell_Bench_Press_-_Medium_Grip',         met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'incline-bench',    name: 'Incline Bench Press', category: 'Chest',     imgFolder: 'Barbell_Incline_Bench_Press_-_Medium_Grip', met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'decline-pushup',   name: 'Decline Push-Up',     category: 'Chest',     imgFolder: 'Decline_Push-Up',                          met: 4.0,  bodyFraction: 0.70, isWeighted: false, burnCoeff: 0.005 },
+  { id: 'db-flyes',         name: 'Dumbbell Flyes',      category: 'Chest',     imgFolder: 'Dumbbell_Flyes',                           met: 4.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
+  { id: 'chest-dips',       name: 'Chest Dips',          category: 'Chest',     imgFolder: 'Dips_-_Chest_Version',                     met: 6.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.005 },
   // ── Back ──
-  { id: 'chin-up',        name: 'Pull-ups',         category: 'Back',      imgFolder: 'Chin-Up',                             met: 8.0,  calsPerRep: 0.65 },
-  { id: 'deadlift',       name: 'Deadlift',         category: 'Back',      imgFolder: 'Barbell_Deadlift',                    met: 6.0,  calsPerRep: 0.5  },
-  { id: 'bent-row',       name: 'Bent-over Row',    category: 'Back',      imgFolder: 'Bent_Over_Barbell_Row',               met: 5.0,  calsPerRep: 0.4  },
+  { id: 'chin-up',          name: 'Pull-ups',             category: 'Back',      imgFolder: 'Chin-Up',                                  met: 8.0,  bodyFraction: 1.0,  isWeighted: false, burnCoeff: 0.005 },
+  { id: 'deadlift',         name: 'Deadlift',             category: 'Back',      imgFolder: 'Barbell_Deadlift',                         met: 6.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
+  { id: 'bent-row',         name: 'Bent-over Row',        category: 'Back',      imgFolder: 'Bent_Over_Barbell_Row',                    met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'lat-pulldown',     name: 'Lat Pulldown',         category: 'Back',      imgFolder: 'Wide-Grip_Lat_Pulldown',                   met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'rdl',              name: 'Romanian Deadlift',    category: 'Back',      imgFolder: 'Romanian_Deadlift',                        met: 5.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'face-pull',        name: 'Face Pulls',           category: 'Back',      imgFolder: 'Face_Pull',                                met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
   // ── Legs ──
-  { id: 'squats',         name: 'Squats',           category: 'Legs',      imgFolder: 'Bodyweight_Squat',                    met: 5.0,  calsPerRep: 0.32 },
-  { id: 'lunges',         name: 'Lunges',           category: 'Legs',      imgFolder: 'Barbell_Walking_Lunge',               met: 4.0,  calsPerRep: 0.25 },
-  { id: 'leg-press',      name: 'Leg Press',        category: 'Legs',      imgFolder: 'Leg_Press',                           met: 5.0,  calsPerRep: 0.35 },
+  { id: 'squats',           name: 'Squats',               category: 'Legs',      imgFolder: 'Bodyweight_Squat',                         met: 5.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'lunges',           name: 'Lunges',               category: 'Legs',      imgFolder: 'Barbell_Walking_Lunge',                    met: 4.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.004 },
+  { id: 'leg-press',        name: 'Leg Press',            category: 'Legs',      imgFolder: 'Leg_Press',                                met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
+  { id: 'leg-extension',    name: 'Leg Extension',        category: 'Legs',      imgFolder: 'Leg_Extensions',                           met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'leg-curl',         name: 'Leg Curl',             category: 'Legs',      imgFolder: 'Lying_Leg_Curls',                          met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'calf-raise',       name: 'Calf Raises',          category: 'Legs',      imgFolder: 'Standing_Calf_Raises',                     met: 3.0,  bodyFraction: 1.0,  isWeighted: true,  burnCoeff: 0.002 },
+  { id: 'hip-thrust',       name: 'Hip Thrust',           category: 'Legs',      imgFolder: 'Barbell_Hip_Thrust',                       met: 4.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
+  { id: 'glute-bridge',     name: 'Glute Bridge',         category: 'Legs',      imgFolder: 'Barbell_Glute_Bridge',                     met: 3.5,  bodyFraction: 0.65, isWeighted: false, burnCoeff: 0.004 },
+  { id: 'sumo-squat',       name: 'Sumo Squat',           category: 'Legs',      imgFolder: 'Plie_Dumbbell_Squat',                      met: 5.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.005 },
   // ── Arms ──
-  { id: 'bicep-curl',     name: 'Bicep Curls',      category: 'Arms',      imgFolder: 'Barbell_Curl',                        met: 3.0,  calsPerRep: 0.2  },
-  { id: 'tricep-push',    name: 'Tricep Pushdown',  category: 'Arms',      imgFolder: 'Triceps_Pushdown',                    met: 3.5,  calsPerRep: 0.25 },
-  { id: 'shoulder-press', name: 'Shoulder Press',   category: 'Arms',      imgFolder: 'Dumbbell_Shoulder_Press',             met: 3.5,  calsPerRep: 0.35 },
+  { id: 'bicep-curl',       name: 'Bicep Curls',          category: 'Arms',      imgFolder: 'Barbell_Curl',                             met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'hammer-curl',      name: 'Hammer Curls',         category: 'Arms',      imgFolder: 'Hammer_Curls',                             met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'tricep-push',      name: 'Tricep Pushdown',      category: 'Arms',      imgFolder: 'Triceps_Pushdown',                         met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'skull-crusher',    name: 'Skull Crushers',       category: 'Arms',      imgFolder: 'EZ-Bar_Skullcrusher',                      met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'tricep-dip',       name: 'Tricep Dips',          category: 'Arms',      imgFolder: 'Dips_-_Triceps_Version',                   met: 6.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.005 },
+  { id: 'shoulder-press',   name: 'Shoulder Press',       category: 'Arms',      imgFolder: 'Dumbbell_Shoulder_Press',                  met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
+  { id: 'lateral-raise',    name: 'Lateral Raises',       category: 'Arms',      imgFolder: 'Side_Lateral_Raise',                       met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
+  { id: 'arnold-press',     name: 'Arnold Press',         category: 'Arms',      imgFolder: 'Arnold_Dumbbell_Press',                    met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
   // ── Core ──
-  { id: 'plank',          name: 'Plank',            category: 'Core',      imgFolder: 'Plank',                               met: 3.8,  calsPerRep: 0.08 },
-  { id: 'crunches',       name: 'Crunches',         category: 'Core',      imgFolder: 'Crunches',                            met: 3.8,  calsPerRep: 0.15 },
-  { id: 'russian-twist',  name: 'Russian Twists',   category: 'Core',      imgFolder: 'Russian_Twist',                       met: 4.0,  calsPerRep: 0.15 },
-  { id: 'mtn-climbers',   name: 'Mountain Climbers',category: 'Core',      imgFolder: 'Mountain_Climbers',                   met: 8.0,  calsPerRep: 0.1  },
+  { id: 'plank',            name: 'Plank',                category: 'Core',      imgFolder: 'Plank',                                    met: 3.8,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'side-plank',       name: 'Side Plank',           category: 'Core',      imgFolder: 'Side_Bridge',                              met: 3.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'crunches',         name: 'Crunches',             category: 'Core',      imgFolder: 'Crunches',                                 met: 3.8,  bodyFraction: 0.3,  isWeighted: false, burnCoeff: 0.003 },
+  { id: 'bicycle-crunch',   name: 'Bicycle Crunches',     category: 'Core',      imgFolder: 'Cross-Body_Crunch',                        met: 5.0,  bodyFraction: 0.35, isWeighted: false, burnCoeff: 0.003 },
+  { id: 'russian-twist',    name: 'Russian Twists',       category: 'Core',      imgFolder: 'Russian_Twist',                            met: 4.0,  bodyFraction: 0.3,  isWeighted: false, burnCoeff: 0.003 },
+  { id: 'leg-raise',        name: 'Hanging Leg Raises',   category: 'Core',      imgFolder: 'Hanging_Leg_Raise',                        met: 4.5,  bodyFraction: 0.6,  isWeighted: false, burnCoeff: 0.004 },
+  { id: 'v-ups',            name: 'V-Ups',                category: 'Core',      imgFolder: 'Jackknife_Sit-Up',                         met: 5.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.004 },
+  { id: 'ab-wheel',         name: 'Ab Wheel Rollout',     category: 'Core',      imgFolder: 'Ab_Roller',                                met: 5.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.005 },
+  { id: 'mtn-climbers',     name: 'Mountain Climbers',    category: 'Core',      imgFolder: 'Mountain_Climbers',                        met: 8.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.004 },
   // ── Cardio ──
-  { id: 'running',        name: 'Running',          category: 'Cardio',    imgFolder: 'Running_Treadmill',                   met: 9.8,  calsPerRep: 0.05 },
-  { id: 'star-jump',      name: 'Star Jumps',       category: 'Cardio',    imgFolder: 'Star_Jump',                           met: 8.0,  calsPerRep: 0.2  },
-  { id: 'jump-rope',      name: 'Jump Rope',        category: 'Cardio',    imgFolder: 'Rope_Jumping',                        met: 11.8, calsPerRep: 0.15 },
+  { id: 'walking',          name: 'Walking',              category: 'Cardio',    imgFolder: 'Walking_Treadmill',                        met: 3.5,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'brisk-walk',       name: 'Brisk Walking',        category: 'Cardio',    imgFolder: 'Walking_Treadmill',                        met: 4.3,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'hiking',           name: 'Hiking',               category: 'Cardio',    imgFolder: 'Trail_Running_Walking',                    met: 5.3,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'running',          name: 'Running',              category: 'Cardio',    imgFolder: 'Running_Treadmill',                        met: 9.8,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'jogging',          name: 'Jogging',              category: 'Cardio',    imgFolder: 'Jogging_Treadmill',                        met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'cycling',          name: 'Cycling',              category: 'Cardio',    imgFolder: 'Bicycling_Stationary',                     met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'swimming',         name: 'Swimming',             category: 'Cardio',    imgFolder: 'Butterfly',                                met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'elliptical',       name: 'Elliptical',           category: 'Cardio',    imgFolder: 'Elliptical_Trainer',                       met: 5.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'rowing-machine',   name: 'Rowing Machine',       category: 'Cardio',    imgFolder: 'Rowing_Stationary',                        met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'stair-climb',      name: 'Stair Climbing',       category: 'Cardio',    imgFolder: 'Stairmaster',                              met: 9.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'battle-ropes',     name: 'Battle Ropes',         category: 'Cardio',    imgFolder: 'Battling_Ropes',                           met: 10.0, bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
+  { id: 'star-jump',        name: 'Star Jumps',           category: 'Cardio',    imgFolder: 'Star_Jump',                                met: 8.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.004 },
+  { id: 'jump-rope',        name: 'Jump Rope',            category: 'Cardio',    imgFolder: 'Rope_Jumping',                             met: 11.8, bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
   // ── Full Body ──
-  { id: 'box-jump',       name: 'Box Jump',         category: 'Full Body', imgFolder: 'Box_Jump_Multiple_Response',          met: 8.0,  calsPerRep: 0.5  },
-  { id: 'clean-jerk',     name: 'Clean & Jerk',     category: 'Full Body', imgFolder: 'Clean_and_Jerk',                      met: 8.0,  calsPerRep: 0.6  },
+  { id: 'burpees',          name: 'Burpees',              category: 'Full Body', imgFolder: 'Plyo_Push-up',                             met: 8.0,  bodyFraction: 0.9,  isWeighted: false, burnCoeff: 0.006 },
+  { id: 'box-jump',         name: 'Box Jump',             category: 'Full Body', imgFolder: 'Box_Jump_Multiple_Response',               met: 8.0,  bodyFraction: 1.0,  isWeighted: false, burnCoeff: 0.006 },
+  { id: 'kettlebell-swing', name: 'Kettlebell Swings',    category: 'Full Body', imgFolder: 'One-Arm_Kettlebell_Swings',                met: 9.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.007 },
+  { id: 'thruster',         name: 'Thrusters',            category: 'Full Body', imgFolder: 'Kettlebell_Thruster',                      met: 8.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
+  { id: 'clean-jerk',       name: 'Clean & Jerk',         category: 'Full Body', imgFolder: 'Clean_and_Jerk',                           met: 8.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.007 },
+  { id: 'turkish-getup',    name: 'Turkish Get-Up',       category: 'Full Body', imgFolder: 'Kettlebell_Turkish_Get-Up_Lunge_style',    met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
 ];
 
 // ── Calorie calculation ──────────────────────────────────────────────────────
-// Duration:  MET × weight(kg) × time(h)         — standard exercise science formula
-// Reps:      calsPerRep × (weight / 70) × reps  — scales linearly with body weight
-interface ExState { mode: 'duration' | 'reps'; value: string; }
+interface ExState {
+  mode: 'duration' | 'reps';
+  value: string;  // minutes (duration) or reps per set (reps)
+  sets: string;   // number of sets
+  load: string;   // extra load weight in kg (barbell / dumbbell)
+}
 
-function calcCalories(ex: Exercise, s: ExState, weightKg: number): number | null {
+function calcCalories(ex: Exercise, s: ExState, bodyKg: number): number | null {
   const v = parseFloat(s.value);
-  if (isNaN(v) || v <= 0 || weightKg <= 0) return null;
-  const w = weightKg;
-  if (s.mode === 'duration') return Math.round(ex.met * w * (v / 60) * 10) / 10;
-  return Math.round(ex.calsPerRep * (w / 70) * v * 10) / 10;
+  if (isNaN(v) || v <= 0 || bodyKg <= 0) return null;
+
+  if (s.mode === 'duration') {
+    // MET formula — accurate for continuous-movement cardio (no rest periods)
+    return Math.round(ex.met * bodyKg * (v / 60) * 10) / 10;
+  }
+
+  // Reps mode — mechanical work model (more accurate for gym strength training)
+  // Based on: work = sets × reps × load × g × ROM, divided by ~25% mechanical efficiency
+  // Simplified to: sets × reps × effectiveKg × burnCoeff  (coeff derived from lab studies)
+  const sets = Math.max(1, parseFloat(s.sets) || 1);
+  const loadKg = ex.isWeighted ? Math.max(0, parseFloat(s.load) || 0) : 0;
+  const effectiveKg = ex.bodyFraction * bodyKg + loadKg;
+  if (effectiveKg <= 0) return null;
+  return Math.round(sets * v * effectiveKg * ex.burnCoeff * 10) / 10;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function ExercisesPage() {
   const [weight, setWeight]     = useState<string>('70');
   const [filter, setFilter]     = useState('All');
+  const [search, setSearch]     = useState('');
   const [modalEx, setModalEx]   = useState<Exercise | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [exStates, setExStates] = useState<Record<string, ExState>>({});
 
-  const weightKg = Math.max(1, parseFloat(weight) || 70);
+  const bodyKg = Math.max(1, parseFloat(weight) || 70);
 
-  function getState(id: string): ExState { return exStates[id] ?? { mode: 'duration', value: '' }; }
+  function getState(id: string, ex: Exercise): ExState {
+    return exStates[id] ?? { mode: ex.durationOnly ? 'duration' : 'reps', value: '', sets: '3', load: '' };
+  }
   function patchState(id: string, patch: Partial<ExState>) {
-    setExStates(prev => ({ ...prev, [id]: { ...getState(id), ...patch } }));
+    setExStates(prev => ({ ...prev, [id]: { ...getState(id, EXERCISES.find(e => e.id === id)!), ...patch } }));
   }
 
-  const filtered = filter === 'All' ? EXERCISES : EXERCISES.filter(e => e.category === filter);
+  const filtered = EXERCISES
+    .filter(e => filter === 'All' || e.category === filter)
+    .filter(e => !search.trim() || e.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div className="page">
@@ -124,7 +196,21 @@ export default function ExercisesPage() {
               src={IMG(modalEx.imgFolder)}
               alt={modalEx.name}
               style={{ width: '100%', borderRadius: '14px', display: 'block', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}
+              onError={e => {
+                const t = e.currentTarget;
+                t.style.display = 'none';
+                const ph = t.nextElementSibling as HTMLElement | null;
+                if (ph) ph.style.display = 'flex';
+              }}
             />
+            <div style={{
+              display: 'none', width: '100%', height: '320px', borderRadius: '14px',
+              alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+              fontSize: '1rem', fontWeight: 600, color: 'var(--text-secondary)',
+            }}>
+              {modalEx.name}
+            </div>
             <div style={{ textAlign: 'center', marginTop: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
               <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{modalEx.name}</span>
               <span style={{
@@ -143,8 +229,39 @@ export default function ExercisesPage() {
       {/* ── Page header ── */}
       <h1 className="page-title">Exercises</h1>
 
-      {/* ── Weight + formula card ── */}
-      <div className="card" style={{ marginBottom: '1.5rem', marginTop: '-0.5rem' }}>
+      {/* ── Search bar ── */}
+      <div style={{ position: 'relative', marginBottom: '1rem', marginTop: '-0.25rem' }}>
+        <Search
+          size={15}
+          style={{
+            position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-secondary)', pointerEvents: 'none',
+          }}
+        />
+        <input
+          className="input"
+          type="text"
+          placeholder="Search exercises…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ paddingLeft: '2.25rem', width: '100%' }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            style={{
+              position: 'absolute', right: '0.6rem', top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem',
+              color: 'var(--text-secondary)', display: 'flex', alignItems: 'center',
+            }}
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* ── Weight + method info card ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
 
           {/* Weight input */}
@@ -167,7 +284,7 @@ export default function ExercisesPage() {
             </div>
           </div>
 
-          {/* Formula explanation */}
+          {/* Method explanation */}
           <div style={{ flex: 1, minWidth: '200px' }}>
             <button
               onClick={() => setShowInfo(s => !s)}
@@ -182,27 +299,37 @@ export default function ExercisesPage() {
               <Info size={13} />
               How calories are calculated
             </button>
+
             {showInfo && (
               <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
-                <p><strong style={{ color: 'var(--text-primary)' }}>Duration mode:</strong>{' '}
-                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.72rem' }}>
+                <p>
+                  <strong style={{ color: 'var(--accent-primary)' }}>Strength (Reps mode):</strong>{' '}
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem' }}>
+                    sets × reps × load(kg) × coeff
+                  </span>
+                </p>
+                <p style={{ marginTop: '0.2rem', fontSize: '0.72rem' }}>
+                  Based on mechanical work studies (Robergs et al., ACSM). Counts only actual
+                  lifting time — rest periods between sets are correctly excluded, which is why
+                  this gives a much lower, more realistic number than MET × duration.
+                </p>
+                <p style={{ marginTop: '0.35rem' }}>
+                  <strong style={{ color: 'var(--accent-primary)' }}>Cardio (Duration mode):</strong>{' '}
+                  <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.7rem' }}>
                     MET × weight(kg) × (min ÷ 60)
                   </span>
                 </p>
-                <p style={{ marginTop: '0.25rem' }}>
-                  <strong style={{ color: 'var(--text-primary)' }}>Reps mode:</strong>{' '}
-                  kcal/rep rate × (your weight ÷ 70) × reps
-                </p>
-                <p style={{ marginTop: '0.35rem', fontSize: '0.72rem' }}>
-                  MET (Metabolic Equivalent of Task) is a peer-reviewed intensity scale from the
-                  Compendium of Physical Activities — the same standard used by fitness trackers
-                  and gym equipment.
+                <p style={{ marginTop: '0.2rem', fontSize: '0.72rem' }}>
+                  Standard formula from the Compendium of Physical Activities — accurate for
+                  continuous movement (running, jump rope, etc.) with no rest breaks.
                 </p>
               </div>
             )}
+
             {!showInfo && (
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Using <strong style={{ color: 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{weightKg} kg</strong> · MET formula · scales with your weight
+                Strength: mechanical-work model · Cardio: MET formula ·{' '}
+                <strong style={{ color: 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{bodyKg} kg</strong>
               </p>
             )}
           </div>
@@ -229,23 +356,49 @@ export default function ExercisesPage() {
         ))}
       </div>
 
+      {/* ── No results ── */}
+      {filtered.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
+          <Search size={32} style={{ opacity: 0.3, marginBottom: '0.75rem' }} />
+          <p style={{ fontSize: '0.875rem' }}>No exercises match "{search}"</p>
+        </div>
+      )}
+
       {/* ── Exercise grid ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
         {filtered.map(ex => {
-          const s    = getState(ex.id);
-          const cals = calcCalories(ex, s, weightKg);
+          const s    = getState(ex.id, ex);
+          const cals = calcCalories(ex, s, bodyKg);
           const col  = CAT_COLOR[ex.category] ?? DEFAULT_COLOR;
 
           return (
             <div key={ex.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
-              {/* Thumbnail — click to open full-size modal */}
-              <div className="exercise-thumb" onClick={() => setModalEx(ex)}>
+              {/* Thumbnail */}
+              <div className="exercise-thumb" onClick={() => setModalEx(ex)} style={{ position: 'relative' }}>
                 <img
                   src={IMG(ex.imgFolder)}
                   alt={ex.name}
                   style={{ width: '100%', height: '160px', objectFit: 'cover', display: 'block' }}
+                  onError={e => {
+                    const t = e.currentTarget;
+                    t.style.display = 'none';
+                    const ph = t.nextElementSibling as HTMLElement | null;
+                    if (ph?.dataset.placeholder) ph.style.display = 'flex';
+                  }}
                 />
+                <div
+                  data-placeholder="1"
+                  style={{
+                    display: 'none', width: '100%', height: '160px',
+                    alignItems: 'center', justifyContent: 'center',
+                    background: `linear-gradient(135deg, ${col.bg}, rgba(0,0,0,0.3))`,
+                    fontSize: '0.8rem', fontWeight: 600, color: col.text,
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  {ex.name}
+                </div>
                 <div className="exercise-zoom-icon">
                   <ZoomIn size={26} color="white" />
                 </div>
@@ -266,37 +419,85 @@ export default function ExercisesPage() {
                   </span>
                 </div>
 
-                {/* Duration / Reps toggle */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  {(['duration', 'reps'] as const).map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => patchState(ex.id, { mode, value: '' })}
-                      style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-                        padding: '0.35rem 0', borderRadius: '7px', fontSize: '0.78rem',
-                        cursor: 'pointer', border: '1px solid', transition: 'all 150ms',
-                        background:  s.mode === mode ? 'rgba(0,255,157,0.1)' : 'transparent',
-                        borderColor: s.mode === mode ? 'var(--accent-primary)' : 'var(--border)',
-                        color:       s.mode === mode ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                        fontWeight:  s.mode === mode ? 600 : 400,
-                      }}
-                    >
-                      {mode === 'duration' ? <Clock size={12} /> : <Repeat size={12} />}
-                      {mode === 'duration' ? 'Duration' : 'Reps'}
-                    </button>
-                  ))}
-                </div>
+                {/* Duration / Reps toggle (hidden for duration-only exercises) */}
+                {!ex.durationOnly && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                    {(['reps', 'duration'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        onClick={() => patchState(ex.id, { mode, value: '' })}
+                        style={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
+                          padding: '0.35rem 0', borderRadius: '7px', fontSize: '0.78rem',
+                          cursor: 'pointer', border: '1px solid', transition: 'all 150ms',
+                          background:  s.mode === mode ? 'rgba(0,255,157,0.1)' : 'transparent',
+                          borderColor: s.mode === mode ? 'var(--accent-primary)' : 'var(--border)',
+                          color:       s.mode === mode ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                          fontWeight:  s.mode === mode ? 600 : 400,
+                        }}
+                      >
+                        {mode === 'duration' ? <Clock size={12} /> : <Repeat size={12} />}
+                        {mode === 'duration' ? 'Duration' : 'Reps'}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                {/* Input */}
-                <input
-                  className="input"
-                  type="number"
-                  min="1"
-                  placeholder={s.mode === 'duration' ? 'Minutes...' : 'Repetitions...'}
-                  value={s.value}
-                  onChange={e => patchState(ex.id, { value: e.target.value })}
-                />
+                {/* Inputs */}
+                {s.mode === 'duration' || ex.durationOnly ? (
+                  /* Duration: single minutes input */
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    placeholder="Minutes…"
+                    value={s.value}
+                    onChange={e => patchState(ex.id, { value: e.target.value })}
+                  />
+                ) : (
+                  /* Reps: sets + reps per set + (optional) load */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                      <div>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Sets</p>
+                        <input
+                          className="input"
+                          type="number"
+                          min="1"
+                          placeholder="3"
+                          value={s.sets}
+                          onChange={e => patchState(ex.id, { sets: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Reps / set</p>
+                        <input
+                          className="input"
+                          type="number"
+                          min="1"
+                          placeholder="10"
+                          value={s.value}
+                          onChange={e => patchState(ex.id, { value: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    {ex.isWeighted && (
+                      <div>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                          Load (kg) <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— barbell / dumbbell</span>
+                        </p>
+                        <input
+                          className="input"
+                          type="number"
+                          min="0"
+                          placeholder="e.g. 60"
+                          value={s.load}
+                          onChange={e => patchState(ex.id, { load: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Calorie result */}
                 <div style={{ marginTop: '0.75rem', minHeight: '2.5rem', display: 'flex', alignItems: 'center' }}>
@@ -317,7 +518,11 @@ export default function ExercisesPage() {
                     </div>
                   ) : (
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Enter {s.mode === 'duration' ? 'minutes' : 'reps'} to calculate
+                      {s.mode === 'duration' || ex.durationOnly
+                        ? 'Enter minutes to calculate'
+                        : ex.isWeighted
+                          ? 'Enter sets, reps & load to calculate'
+                          : 'Enter sets & reps to calculate'}
                     </p>
                   )}
                 </div>
