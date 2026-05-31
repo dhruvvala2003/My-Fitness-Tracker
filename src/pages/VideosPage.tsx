@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Plus, Play, Trash2, Video, X, Upload, User } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Plus, Play, Trash2, Video, X, Upload, User, Pencil, Check, ChevronUp, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
@@ -39,6 +39,12 @@ export default function VideosPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [orderedIds, setOrderedIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('fittrack_video_order') || '[]'); }
+    catch { return []; }
+  });
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function loadVideos() {
@@ -46,7 +52,18 @@ export default function VideosPage() {
       .from('exercise_videos')
       .select('*')
       .order('created_at', { ascending: false });
-    if (!error && data) setVideos(data as VideoMeta[]);
+    if (!error && data) {
+      setVideos(data as VideoMeta[]);
+      // Seed order for any new videos not yet in orderedIds
+      setOrderedIds(prev => {
+        const existing = new Set(prev);
+        const newIds = (data as VideoMeta[]).filter(v => !existing.has(v.id)).map(v => v.id);
+        if (newIds.length === 0) return prev;
+        const merged = [...prev, ...newIds];
+        localStorage.setItem('fittrack_video_order', JSON.stringify(merged));
+        return merged;
+      });
+    }
     setLoading(false);
   }
 
@@ -125,9 +142,48 @@ export default function VideosPage() {
       setPlayingId(null);
     }
     setVideos(v => v.filter(x => x.id !== video.id));
+    setOrderedIds(prev => {
+      const next = prev.filter(id => id !== video.id);
+      localStorage.setItem('fittrack_video_order', JSON.stringify(next));
+      return next;
+    });
   }
 
-  const filtered = filter === 'All' ? videos : videos.filter(v => v.category === filter);
+  async function handleRename(video: VideoMeta) {
+    if (!editName.trim() || !user) return;
+    const newName = editName.trim();
+    await supabase.from('exercise_videos').update({ name: newName }).eq('id', video.id);
+    setVideos(v => v.map(x => x.id === video.id ? { ...x, name: newName } : x));
+    setEditingId(null);
+    setEditName('');
+  }
+
+  function moveVideo(id: string, direction: 'up' | 'down') {
+    const allIds = orderedIds.length > 0 ? [...orderedIds] : videos.map(v => v.id);
+    for (const v of videos) {
+      if (!allIds.includes(v.id)) allIds.push(v.id);
+    }
+    const idx = allIds.indexOf(id);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= allIds.length) return;
+    const newIds = [...allIds];
+    [newIds[idx], newIds[swapIdx]] = [newIds[swapIdx], newIds[idx]];
+    setOrderedIds(newIds);
+    localStorage.setItem('fittrack_video_order', JSON.stringify(newIds));
+  }
+
+  const sortedVideos = useMemo(() => {
+    if (orderedIds.length === 0) return videos;
+    const orderMap = new Map(orderedIds.map((id, i) => [id, i]));
+    return [...videos].sort((a, b) => {
+      const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : orderedIds.length;
+      const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : orderedIds.length;
+      return ai - bi;
+    });
+  }, [videos, orderedIds]);
+
+  const filtered = filter === 'All' ? sortedVideos : sortedVideos.filter(v => v.category === filter);
 
   return (
     <div className="page">
@@ -258,23 +314,81 @@ export default function VideosPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {filtered.map(v => (
+          {filtered.map((v, _idx) => {
+            const globalIdx = sortedVideos.findIndex(x => x.id === v.id);
+            return (
             <div key={v.id} className="card" style={{ padding: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
+                {/* Reorder arrows */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flexShrink: 0, justifyContent: 'center' }}>
+                  <button
+                    style={{ background: 'none', border: 'none', cursor: globalIdx > 0 ? 'pointer' : 'default', color: globalIdx > 0 ? 'var(--text-secondary)' : 'rgba(255,255,255,0.1)', padding: '2px', display: 'flex' }}
+                    onClick={() => moveVideo(v.id, 'up')}
+                    title="Move up"
+                    disabled={globalIdx === 0}
+                  >
+                    <ChevronUp size={14} />
+                  </button>
+                  <button
+                    style={{ background: 'none', border: 'none', cursor: globalIdx < sortedVideos.length - 1 ? 'pointer' : 'default', color: globalIdx < sortedVideos.length - 1 ? 'var(--text-secondary)' : 'rgba(255,255,255,0.1)', padding: '2px', display: 'flex' }}
+                    onClick={() => moveVideo(v.id, 'down')}
+                    title="Move down"
+                    disabled={globalIdx >= sortedVideos.length - 1}
+                  >
+                    <ChevronDown size={14} />
+                  </button>
+                </div>
+
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: '1rem' }}>{v.name}</span>
-                    <span style={{
-                      fontSize: '0.7rem',
-                      padding: '0.15rem 0.5rem',
-                      borderRadius: '999px',
-                      background: 'rgba(124,58,237,0.2)',
-                      color: 'var(--accent-secondary)',
-                      border: '1px solid rgba(124,58,237,0.4)',
-                    }}>
-                      {v.category}
-                    </span>
-                  </div>
+                  {editingId === v.id ? (
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.25rem' }}>
+                      <input
+                        className="input-date"
+                        style={{ fontFamily: 'inherit', flex: 1, fontSize: '0.9rem' }}
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRename(v); if (e.key === 'Escape') { setEditingId(null); setEditName(''); } }}
+                        autoFocus
+                      />
+                      <button
+                        style={{ background: 'rgba(0,255,157,0.1)', border: '1px solid var(--accent-primary)', borderRadius: '6px', cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
+                        onClick={() => handleRename(v)}
+                        title="Save name"
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
+                        onClick={() => { setEditingId(null); setEditName(''); }}
+                        title="Cancel"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: '1rem' }}>{v.name}</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '999px',
+                        background: 'rgba(124,58,237,0.2)',
+                        color: 'var(--accent-secondary)',
+                        border: '1px solid rgba(124,58,237,0.4)',
+                      }}>
+                        {v.category}
+                      </span>
+                      {user && v.uploaded_by === user.id && (
+                        <button
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '2px' }}
+                          onClick={() => { setEditingId(v.id); setEditName(v.name); }}
+                          title="Rename video"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>
                     {v.file_name} &nbsp;·&nbsp; {formatSize(v.size)}
                   </div>
@@ -334,7 +448,8 @@ export default function VideosPage() {
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>

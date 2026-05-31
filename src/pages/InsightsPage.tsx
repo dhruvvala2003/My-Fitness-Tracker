@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Search, X, Star, BookOpen, AlertTriangle, ThumbsUp, ThumbsDown, Trash2, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, X, Star, BookOpen, AlertTriangle, ThumbsUp, ThumbsDown, Trash2, SlidersHorizontal, Pencil } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
@@ -75,7 +75,7 @@ function StarRating({
 }
 
 export default function InsightsPage() {
-  const { data, loading, addInsight, deleteInsight, updateInsightRating } = useAppData();
+  const { data, loading, addInsight, deleteInsight, updateInsightRating, updateInsight } = useAppData();
   const { user } = useAuth();
   const insights = data.insights ?? [];
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -87,7 +87,7 @@ export default function InsightsPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
-  const [formType, setFormType] = useState<InsightType>('learning');
+  const [formType, setFormType] = useState<InsightType>('good');
   const [formText, setFormText] = useState('');
   const [formRating, setFormRating] = useState(3);
   const [formDate, setFormDate] = useState(today());
@@ -317,6 +317,10 @@ export default function InsightsPage() {
                 if (!user) { setShowLoginPrompt(true); return; }
                 updateInsightRating(entry.id, r);
               }}
+              onUpdate={updates => {
+                if (!user) { setShowLoginPrompt(true); return; }
+                updateInsight(entry.id, updates);
+              }}
             />
           ))
         )}
@@ -329,15 +333,78 @@ function InsightCard({
   entry,
   onDelete,
   onRatingChange,
+  onUpdate,
 }: {
   entry: InsightEntry;
   onDelete: () => void;
   onRatingChange: (r: number) => void;
+  onUpdate: (updates: { type?: InsightType; text?: string; date?: string }) => void;
 }) {
   const meta = TYPE_META[entry.type as InsightType] ?? TYPE_META.learning;
+  const [editing, setEditing] = useState(false);
+  const [editType, setEditType] = useState<InsightType>(entry.type as InsightType);
+  const [editText, setEditText] = useState(entry.text);
+  const [editDate, setEditDate] = useState(entry.date);
+
   const dateLabel = new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   });
+
+  function handleSave() {
+    if (!editText.trim()) return;
+    onUpdate({ type: editType, text: editText.trim(), date: editDate });
+    setEditing(false);
+  }
+
+  function handleCancelEdit() {
+    setEditType(entry.type as InsightType);
+    setEditText(entry.text);
+    setEditDate(entry.date);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <div className={`insight-card ${meta.colorClass}`}>
+        <div className="insights-type-grid" style={{ marginBottom: '0.5rem' }}>
+          {(Object.keys(TYPE_META) as InsightType[]).map(t => (
+            <button
+              key={t}
+              type="button"
+              className={`insights-type-btn${editType === t ? ' active' : ''}`}
+              data-type={t}
+              onClick={() => setEditType(t)}
+            >
+              {TYPE_META[t].icon}
+              {TYPE_META[t].label}
+            </button>
+          ))}
+        </div>
+        <textarea
+          className="insights-textarea"
+          value={editText}
+          onChange={e => setEditText(e.target.value)}
+          rows={3}
+          autoFocus
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+          <input
+            type="date"
+            className="insights-date-input"
+            value={editDate}
+            onChange={e => setEditDate(e.target.value)}
+          />
+          <button className="insights-submit-btn" onClick={handleSave} style={{ marginLeft: 'auto' }}>Save</button>
+          <button
+            style={{ background: 'none', border: '1px solid var(--text-secondary)', borderRadius: '6px', padding: '0.35rem 0.75rem', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
+            onClick={handleCancelEdit}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`insight-card ${meta.colorClass}`}>
@@ -357,9 +424,14 @@ function InsightCard({
             <StarRating value={entry.rating} onChange={onRatingChange} size={16} />
           </div>
         </div>
-        <button className="insight-delete-btn" onClick={onDelete} title="Delete">
-          <Trash2 size={14} />
-        </button>
+        <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
+          <button className="insight-delete-btn" onClick={() => setEditing(true)} title="Edit">
+            <Pencil size={14} />
+          </button>
+          <button className="insight-delete-btn" onClick={onDelete} title="Delete">
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

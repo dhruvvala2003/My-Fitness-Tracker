@@ -77,6 +77,7 @@ function HabitHeatmap({
   const todayStr = today();
   const days = getMonthDays(year, month);
   const startDow = new Date(year, month, 1).getDay();
+  const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
   const cells: (string | null)[] = [...Array(startDow).fill(null), ...days];
   while (cells.length % 7 !== 0) cells.push(null);
@@ -98,11 +99,14 @@ function HabitHeatmap({
             const isFuture = dateStr > todayStr;
             const progress = isFuture ? -1 : computeProgress(checks, visibleIndices, dateStr);
             const isToday = dateStr === todayStr;
+            const isHovered = hoveredDate === dateStr;
             const dayNum = parseInt(dateStr.split('-')[2]);
             return (
               <div
                 key={di}
                 title={`${formatDisplayDate(dateStr)}: ${isFuture ? '—' : progress + '%'}`}
+                onMouseEnter={() => !isFuture && setHoveredDate(dateStr)}
+                onMouseLeave={() => setHoveredDate(null)}
                 style={{
                   aspectRatio: '1',
                   borderRadius: '5px',
@@ -111,11 +115,20 @@ function HabitHeatmap({
                   alignItems: 'center',
                   justifyContent: 'center',
                   fontSize: '9px',
-                  color: 'rgba(255,255,255,0.45)',
+                  color: isHovered ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.45)',
                   fontFamily: 'JetBrains Mono, monospace',
-                  border: isToday ? '1.5px solid rgba(0,255,157,0.7)' : '1px solid rgba(255,255,255,0.04)',
-                  cursor: 'default',
-                  fontWeight: isToday ? 700 : 400,
+                  border: isHovered
+                    ? '1.5px solid rgba(255,255,255,0.55)'
+                    : isToday
+                      ? '1.5px solid rgba(0,255,157,0.7)'
+                      : '1px solid rgba(255,255,255,0.04)',
+                  cursor: isFuture ? 'default' : 'pointer',
+                  fontWeight: isToday || isHovered ? 700 : 400,
+                  transform: isHovered ? 'scale(1.2)' : 'scale(1)',
+                  transition: 'transform 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease',
+                  boxShadow: isHovered && !isFuture ? `0 0 8px ${heatColor(progress)}` : 'none',
+                  position: 'relative',
+                  zIndex: isHovered ? 2 : 1,
                 }}
               >
                 {dayNum}

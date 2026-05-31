@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Flame } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
@@ -33,15 +33,48 @@ function getMaxStreak(streak: StreakData): number {
   return Math.max(...intervals);
 }
 
+function getBreakReasons(streakId: string): Record<string, string> {
+  try {
+    const all = JSON.parse(localStorage.getItem('fittrack_break_reasons') || '{}');
+    return all[streakId] ?? {};
+  } catch { return {}; }
+}
+
+function saveBreakReason(streakId: string, date: string, reason: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem('fittrack_break_reasons') || '{}');
+    if (!all[streakId]) all[streakId] = {};
+    if (reason.trim()) all[streakId][date] = reason.trim();
+    else delete all[streakId][date];
+    localStorage.setItem('fittrack_break_reasons', JSON.stringify(all));
+  } catch {}
+}
+
+function removeBreakReasonLS(streakId: string, date: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem('fittrack_break_reasons') || '{}');
+    if (all[streakId]) {
+      delete all[streakId][date];
+      localStorage.setItem('fittrack_break_reasons', JSON.stringify(all));
+    }
+  } catch {}
+}
+
 export default function StreakDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data, logBreakDate, removeBreakDate } = useAppData();
   const { user } = useAuth();
   const [breakDate, setBreakDate] = useState(today());
+  const [breakReason, setBreakReason] = useState('');
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const streak = data.streaks.find(s => s.id === id);
+
+  useEffect(() => {
+    if (streak?.id) setReasons(getBreakReasons(streak.id));
+  }, [streak?.id]);
 
   if (!streak) {
     return (
@@ -61,11 +94,22 @@ export default function StreakDetailPage() {
   function handleLogBreak() {
     if (!user) { setShowLoginPrompt(true); return; }
     logBreakDate(streak!.id, breakDate);
+    if (breakReason.trim()) {
+      saveBreakReason(streak!.id, breakDate, breakReason);
+      setReasons(prev => ({ ...prev, [breakDate]: breakReason.trim() }));
+    }
+    setBreakReason('');
   }
 
   function handleRemoveBreak(d: string) {
     if (!user) { setShowLoginPrompt(true); return; }
     removeBreakDate(streak!.id, d);
+    removeBreakReasonLS(streak!.id, d);
+    setReasons(prev => {
+      const next = { ...prev };
+      delete next[d];
+      return next;
+    });
   }
 
   return (
@@ -117,7 +161,7 @@ export default function StreakDetailPage() {
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
           Record a date when you broke this streak.
         </p>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
           <input
             type="date"
             className="input-date"
@@ -126,10 +170,18 @@ export default function StreakDetailPage() {
             max={today()}
             onChange={e => setBreakDate(e.target.value)}
           />
-          <button className="btn-danger" onClick={handleLogBreak}>
-            <Plus size={16} /> Log Break
-          </button>
         </div>
+        <textarea
+          className="input"
+          placeholder="Why did you break the streak? (optional)"
+          value={breakReason}
+          onChange={e => setBreakReason(e.target.value)}
+          rows={2}
+          style={{ width: '100%', resize: 'vertical', marginBottom: '0.75rem', fontFamily: 'inherit', fontSize: '0.875rem' }}
+        />
+        <button className="btn-danger" onClick={handleLogBreak}>
+          <Plus size={16} /> Log Break
+        </button>
       </div>
 
       {/* Break dates list */}
@@ -166,6 +218,11 @@ export default function StreakDetailPage() {
                       {getStreakAtBreak(streak, d)} days
                     </span>
                   </span>
+                  {reasons[d] && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: '0.1rem' }}>
+                      "{reasons[d]}"
+                    </span>
+                  )}
                 </div>
                 <button
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', padding: '0.25rem' }}

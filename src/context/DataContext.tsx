@@ -25,6 +25,7 @@ interface DataContextType {
   addInsight: (entry: InsightEntry) => Promise<void>;
   deleteInsight: (id: string) => Promise<void>;
   updateInsightRating: (id: string, rating: number) => Promise<void>;
+  updateInsight: (id: string, updates: { type?: InsightEntry['type']; text?: string; date?: string }) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType>({} as DataContextType);
@@ -282,13 +283,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('daily_insights').update({ rating }).eq('user_id', user!.id).eq('id', id);
   }
 
+  async function updateInsight(id: string, updates: { type?: InsightEntry['type']; text?: string; date?: string }) {
+    setData(prev => ({
+      ...prev,
+      insights: prev.insights.map(e => e.id === id ? { ...e, ...updates } : e),
+    }));
+    await supabase.from('daily_insights').update(updates).eq('user_id', user!.id).eq('id', id);
+  }
+
   return (
     <DataContext.Provider value={{
       data, loading,
       toggleHabitCheck, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility,
       addStreak, deleteStreak, logBreakDate, removeBreakDate,
       logMeal, deleteMeal,
-      addInsight, deleteInsight, updateInsightRating,
+      addInsight, deleteInsight, updateInsightRating, updateInsight,
     }}>
       {children}
     </DataContext.Provider>
