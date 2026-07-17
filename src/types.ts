@@ -28,11 +28,41 @@ export interface InsightEntry {
   createdAt: string;
 }
 
+export interface WeightEntry {
+  id: string;
+  date: string;   // YYYY-MM-DD (one entry per day)
+  weightKg: number;
+  note?: string;
+}
+
+export interface WorkoutSet {
+  reps: number;
+  weightKg: number;   // 0 for bodyweight
+  durationMin?: number; // for cardio/duration exercises
+}
+
+export interface WorkoutExercise {
+  name: string;
+  category: string;
+  sets: WorkoutSet[];
+  calories: number; // estimated for this exercise
+}
+
+export interface WorkoutSession {
+  id: string;
+  date: string;       // YYYY-MM-DD
+  startedAt: string;  // ISO
+  exercises: WorkoutExercise[];
+  totalCalories: number;
+}
+
 export interface AppData {
   habits: HabitsData;
   streaks: StreakData[];
   calorieLog: Record<string, CalorieEntry[]>;
   insights: InsightEntry[];
+  weights: WeightEntry[];
+  workouts: WorkoutSession[];
 }
 
 export const DEFAULT_DATA: AppData = {
@@ -44,4 +74,6 @@ export const DEFAULT_DATA: AppData = {
   streaks: [],
   calorieLog: {},
   insights: [],
+  weights: [],
+  workouts: [],
 };

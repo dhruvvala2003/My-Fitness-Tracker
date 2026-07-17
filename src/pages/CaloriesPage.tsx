@@ -164,7 +164,7 @@ export default function CaloriesPage() {
               ) : (
                 <span
                   onClick={() => { setEditingGrams(true); setGramsInput(String(grams)); }}
-                  style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px dashed rgba(0,255,157,0.4)', paddingBottom: '1px' }}
+                  style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', borderBottom: '1px dashed rgba(52,211,153,0.4)', paddingBottom: '1px' }}
                 >
                   {grams}g <Edit2 size={12} />
                 </span>
@@ -181,7 +181,7 @@ export default function CaloriesPage() {
 
             {/* Result */}
             {estimatedCal !== null && (
-              <div style={{ background: 'var(--bg-tertiary)', borderRadius: '10px', padding: '0.875rem 1rem', border: '1px solid rgba(0,255,157,0.15)' }}>
+              <div style={{ background: 'var(--bg-tertiary)', borderRadius: '10px', padding: '0.875rem 1rem', border: '1px solid rgba(52,211,153,0.15)' }}>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
                   Estimated for {grams}g
                 </div>
@@ -193,7 +193,7 @@ export default function CaloriesPage() {
             )}
 
             {error && (
-              <div style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.75rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', whiteSpace: 'pre-line', lineHeight: 1.6 }}>
+              <div style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.75rem', background: 'rgba(248,113,113,0.08)', borderRadius: '8px', whiteSpace: 'pre-line', lineHeight: 1.6 }}>
                 {error}
               </div>
             )}

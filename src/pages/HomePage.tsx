@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 import type { StreakData } from '../types';
 import { today, daysDiff } from '../utils/dateHelpers';
 
@@ -123,17 +124,97 @@ function currentStreakDays(s: StreakData): number {
   return daysDiff([...s.breakDates].sort().slice(-1)[0], t);
 }
 
+const reducedMotion = typeof window !== 'undefined'
+  && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+const finePointer = typeof window !== 'undefined'
+  && !!window.matchMedia?.('(pointer: fine)').matches
+  && !reducedMotion;
+
+/* Daily content picks — computed once at load, not during render */
+const DAY_OF_YEAR = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+const QUOTE     = QUOTES[DAY_OF_YEAR % QUOTES.length];
+const CHALLENGE = CHALLENGES[new Date().getDay()];
+const FACT      = FACTS[DAY_OF_YEAR % FACTS.length];
+
+/* ─── 3D tilt card ─────────────────────────────────────────────────── */
+function TiltCard({ children, className = '', style, onClick }: {
+  children: React.ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  function onMove(e: React.MouseEvent) {
+    const el = ref.current;
+    if (!el || !finePointer) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    el.style.setProperty('--rx', `${(0.5 - py) * 8}deg`);
+    el.style.setProperty('--ry', `${(px - 0.5) * 10}deg`);
+    el.style.setProperty('--gx', `${px * 100}%`);
+    el.style.setProperty('--gy', `${py * 100}%`);
+  }
+
+  function onLeave() {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--ry', '0deg');
+  }
+
+  return (
+    <div ref={ref} className={`tilt-card ${className}`} style={style}
+      onClick={onClick} onMouseMove={onMove} onMouseLeave={onLeave}>
+      {children}
+      <span className="tilt-glare" />
+    </div>
+  );
+}
+
+/* ─── Animated count-up number ─────────────────────────────────────── */
+function CountUp({ value, suffix = '' }: { value: number; suffix?: string }) {
+  const [n, setN] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || reducedMotion) return;
+    let raf = 0;
+    const io = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      io.disconnect();
+      const t0 = performance.now();
+      const dur = 900;
+      const tick = (t: number) => {
+        const p = Math.min(1, (t - t0) / dur);
+        setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
+        if (p < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    }, { threshold: 0.4 });
+    io.observe(el);
+    return () => { io.disconnect(); cancelAnimationFrame(raf); };
+  }, [value]);
+
+  return <span ref={ref}>{reducedMotion ? value : n}{suffix}</span>;
+}
+
 /* ─── Component ────────────────────────────────────────────────────── */
 export default function HomePage() {
   const { data } = useAppData();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const contentRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLElement>(null);
 
   const [slide, setSlide]           = useState(0);
   const [challengeDone, setChallengeDone] = useState(false);
   const [imgLoaded, setImgLoaded] = useState<boolean[]>(() => SLIDES.map(() => false));
 
-  /* Auto-advance every 3 s */
+  /* Auto-advance every 5 s */
   useEffect(() => {
     const id = setInterval(() => setSlide(s => (s + 1) % SLIDES.length), 5000);
     return () => clearInterval(id);
@@ -148,11 +229,40 @@ export default function HomePage() {
     });
   }, []);
 
-  /* Pick daily content by date */
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-  const quote     = QUOTES[dayOfYear % QUOTES.length];
-  const challenge = CHALLENGES[new Date().getDay()];
-  const fact      = FACTS[dayOfYear % FACTS.length];
+  /* Mouse parallax over the hero — writes --mx / --my in [-1, 1] */
+  const onHeroMove = useCallback((e: React.MouseEvent) => {
+    const el = heroRef.current;
+    if (!el || !finePointer) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', String(((e.clientX - r.left) / r.width - 0.5) * 2));
+    el.style.setProperty('--my', String(((e.clientY - r.top) / r.height - 0.5) * 2));
+  }, []);
+
+  const onHeroLeave = useCallback(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    el.style.setProperty('--mx', '0');
+    el.style.setProperty('--my', '0');
+  }, []);
+
+  /* Scroll reveal for the below-the-fold sections */
+  useEffect(() => {
+    const els = document.querySelectorAll('.reveal');
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(en => {
+        if (en.isIntersecting) {
+          en.target.classList.add('revealed');
+          io.unobserve(en.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    els.forEach(el => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
+  const quote     = QUOTE;
+  const challenge = CHALLENGE;
+  const fact      = FACT;
 
   /* Stats */
   const todayStr  = today();
@@ -165,36 +275,67 @@ export default function HomePage() {
 
   const dateLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
+  /* Personalized greeting from the signed-in account */
+  const rawName = user?.email?.split('@')[0] ?? '';
+  const displayName = rawName
+    ? rawName.charAt(0).toUpperCase() + rawName.slice(1).replace(/[._-]+/g, ' ')
+    : 'Champ';
+
+  /* Floating hero chips — live data */
+  const CHIPS = [
+    { cls: 'c1', emoji: '✅', text: `${habitPct}% habits today` },
+    { cls: 'c2', emoji: '🔥', text: `${bestStreak}-day best streak` },
+    { cls: 'c3', emoji: '⚡', text: `${todayCal} kcal logged` },
+  ];
+
   /* Quick nav items */
   const QUICK = [
-    { to: '/habits',   emoji: '📅', label: 'Habits',   sub: 'Daily check-ins',    color: '#00ff9d' },
-    { to: '/streaks',  emoji: '🔥', label: 'Streaks',  sub: 'Maintain your wins', color: '#ffa502' },
-    { to: '/calories', emoji: '⚡', label: 'Calories', sub: 'AI food scanner',    color: '#00d4ff' },
-    { to: '/charts',   emoji: '📊', label: 'Charts',   sub: 'See your progress',  color: '#7c3aed' },
+    { to: '/habits',   emoji: '📅', label: 'Habits',   sub: 'Daily check-ins',    color: '#34d399' },
+    { to: '/streaks',  emoji: '🔥', label: 'Streaks',  sub: 'Maintain your wins', color: '#fbbf24' },
+    { to: '/workout',  emoji: '🏋️', label: 'Workout',  sub: 'Log your session',   color: '#38bdf8' },
+    { to: '/progress', emoji: '📈', label: 'Progress', sub: 'Weight & trends',    color: '#a78bfa' },
   ];
 
   return (
     <div className="home-page">
 
-      {/* ═══ HERO SLIDER ═══ */}
-      <section className="hero-section">
+      {/* ═══ HERO — layered 3D slider ═══ */}
+      <section ref={heroRef} className="hero-section" onMouseMove={onHeroMove} onMouseLeave={onHeroLeave}>
         {SLIDES.map((sl, i) => (
           <div
             key={i}
             className={`hero-slide${i === slide ? ' active' : ''}`}
             style={{
               backgroundImage: imgLoaded[i] ? `url(${sl.url})` : undefined,
-              backgroundColor: '#111118',
+              backgroundColor: '#0b0d12',
               backgroundPosition: sl.pos,
             }}
           />
         ))}
         <div className="hero-overlay" />
 
-        <div className="hero-content">
-          <p className="hero-line1">{SLIDES[slide].line1}</p>
-          <p className="hero-line2">{SLIDES[slide].line2}</p>
-          <p className="hero-sub">{SLIDES[slide].sub}</p>
+        {/* depth layer: glow orbs */}
+        <div className="hero-orb o1" />
+        <div className="hero-orb o2" />
+        <div className="hero-orb o3" />
+
+        {/* depth layer: floating glass chips with live stats */}
+        {CHIPS.map(c => (
+          <div key={c.cls} className={`hero-chip ${c.cls}`}>
+            <div className="chip-inner">
+              <span style={{ fontSize: '1rem' }}>{c.emoji}</span>
+              {c.text}
+            </div>
+          </div>
+        ))}
+
+        <div className="hero-content hero-content-3d">
+          {/* key={slide} replays the entrance animation on every slide change */}
+          <div className="hero-anim" key={slide}>
+            <p className="hero-line1">{SLIDES[slide].line1}</p>
+            <p className="hero-line2">{SLIDES[slide].line2}</p>
+            <p className="hero-sub">{SLIDES[slide].sub}</p>
+          </div>
 
           <div className="hero-cta-row">
             <button className="btn-primary" style={{ padding: '0.625rem 1.5rem', fontSize: '0.875rem', letterSpacing: '0.05em' }}
@@ -225,11 +366,11 @@ export default function HomePage() {
       <div ref={contentRef} className="home-content">
 
         {/* Greeting */}
-        <div style={{ marginBottom: '1.75rem' }}>
+        <div className="reveal" style={{ marginBottom: '1.75rem' }}>
           <h2 className="home-greeting">
             {getGreeting()},{' '}
-            <span style={{ color: 'var(--accent-primary)', textShadow: '0 0 24px rgba(0,255,157,0.45)' }}>
-              Champ! 💥
+            <span style={{ color: 'var(--accent-primary)' }}>
+              {displayName}! 💥
             </span>
           </h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.3rem' }}>
@@ -237,28 +378,30 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Today's stats */}
-        <div className="home-stats">
+        {/* Today's stats — animated count-up + 3D tilt */}
+        <div className="home-stats reveal">
           {[
-            { label: "Today's Habits", value: `${habitPct}%`,   sub: `${todayChecked}/${visibleIndices.length} done`,  color: 'var(--accent-primary)',   route: '/habits',   pct: habitPct },
-            { label: 'Best Streak',    value: `${bestStreak}d`,  sub: 'days running',                            color: 'var(--accent-warn)',      route: '/streaks',  pct: null    },
-            { label: 'Calories Today', value: `${todayCal}`,     sub: 'kcal logged',                             color: 'var(--accent-blue)',      route: '/calories', pct: null    },
+            { label: "Today's Habits", value: habitPct,   suffix: '%', sub: `${todayChecked}/${visibleIndices.length} done`, color: 'var(--accent-primary)', route: '/habits',   pct: habitPct },
+            { label: 'Best Streak',    value: bestStreak, suffix: 'd', sub: 'days running',                                  color: 'var(--accent-warn)',    route: '/streaks',  pct: null    },
+            { label: 'Calories Today', value: todayCal,   suffix: '',  sub: 'kcal logged',                                   color: 'var(--accent-blue)',    route: '/calories', pct: null    },
           ].map(item => (
-            <div key={item.label} className="card stat-card" onClick={() => navigate(item.route)} style={{ cursor: 'pointer' }}>
+            <TiltCard key={item.label} className="card stat-card" onClick={() => navigate(item.route)} style={{ cursor: 'pointer' }}>
               <div className="card-label">{item.label}</div>
-              <div className="card-value" style={{ color: item.color, textShadow: `0 0 20px ${item.color}66` }}>{item.value}</div>
+              <div className="card-value" style={{ color: item.color }}>
+                <CountUp value={item.value} suffix={item.suffix} />
+              </div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{item.sub}</div>
               {item.pct !== null && (
                 <div className="progress-bar" style={{ marginTop: '0.625rem' }}>
                   <div className="progress-fill" style={{ width: `${item.pct}%` }} />
                 </div>
               )}
-            </div>
+            </TiltCard>
           ))}
         </div>
 
         {/* Daily quote */}
-        <div className="card quote-card" style={{ marginBottom: '1rem' }}>
+        <div className="card quote-card reveal" style={{ marginBottom: '1rem' }}>
           <div style={{ fontSize: '0.68rem', color: 'var(--accent-primary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.6rem' }}>
             💬 Daily Motivation
           </div>
@@ -269,7 +412,7 @@ export default function HomePage() {
         </div>
 
         {/* Challenge + Fact */}
-        <div className="challenge-fact-grid" style={{ marginBottom: '1.5rem' }}>
+        <div className="challenge-fact-grid reveal" style={{ marginBottom: '1.5rem' }}>
           {/* Daily challenge */}
           <div className={`card challenge-card${challengeDone ? ' done' : ''}`}>
             <div style={{ fontSize: '0.68rem', color: 'var(--accent-warn)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: '0.5rem' }}>
@@ -297,19 +440,19 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Quick navigate */}
-        <div>
+        {/* Quick navigate — 3D tilt tiles */}
+        <div className="reveal">
           <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, marginBottom: '0.875rem' }}>
             Quick Navigate
           </p>
           <div className="quick-nav-grid">
             {QUICK.map(item => (
-              <div key={item.to} className="quick-nav-card" onClick={() => navigate(item.to)}
+              <TiltCard key={item.to} className="quick-nav-card" onClick={() => navigate(item.to)}
                 style={{ '--card-color': item.color } as React.CSSProperties}>
                 <div style={{ fontSize: '1.75rem', marginBottom: '0.5rem' }}>{item.emoji}</div>
                 <div style={{ fontWeight: 700, color: item.color, marginBottom: '0.2rem', fontSize: '0.9rem' }}>{item.label}</div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{item.sub}</div>
-              </div>
+              </TiltCard>
             ))}
           </div>
         </div>

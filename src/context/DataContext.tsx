@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import { DEFAULT_DATA } from '../types';
-import type { AppData, CalorieEntry, InsightEntry, StreakData } from '../types';
+import type { AppData, CalorieEntry, InsightEntry, StreakData, WeightEntry, WorkoutSession } from '../types';
 
 interface DataContextType {
   data: AppData;
@@ -26,6 +26,12 @@ interface DataContextType {
   deleteInsight: (id: string) => Promise<void>;
   updateInsightRating: (id: string, rating: number) => Promise<void>;
   updateInsight: (id: string, updates: { type?: InsightEntry['type']; text?: string; date?: string }) => Promise<void>;
+  // Weight
+  logWeight: (entry: WeightEntry) => Promise<void>;
+  deleteWeight: (id: string) => Promise<void>;
+  // Workouts
+  addWorkout: (session: WorkoutSession) => Promise<void>;
+  deleteWorkout: (id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType>({} as DataContextType);
@@ -40,12 +46,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     const uid = user.id;
 
-    const [configResult, checksResult, streaksResult, caloriesResult, insightsResult] = await Promise.all([
+    const [configResult, checksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult] = await Promise.all([
       supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('habit_checks').select('*').eq('user_id', uid),
       supabase.from('streaks').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('calorie_entries').select('*').eq('user_id', uid).order('time'),
       supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+      supabase.from('weight_entries').select('*').eq('user_id', uid).order('date'),
+      supabase.from('workout_sessions').select('*').eq('user_id', uid).order('started_at', { ascending: false }),
     ]);
 
     // Build checks: only stored rows are true
@@ -71,6 +79,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     const config = configResult.data;
 
+    const weights: WeightEntry[] = (weightsResult.data ?? []).map(row => ({
+      id: row.id,
+      date: row.date,
+      weightKg: Number(row.weight_kg),
+      note: row.note ?? undefined,
+    }));
+
+    const workouts: WorkoutSession[] = (workoutsResult.data ?? []).map(row => ({
+      id: row.id,
+      date: row.date,
+      startedAt: row.started_at,
+      exercises: row.exercises ?? [],
+      totalCalories: Number(row.total_calories ?? 0),
+    }));
+
     const insights: InsightEntry[] = (insightsResult.data ?? []).map(row => ({
       id: row.id,
       type: row.type as 'learning' | 'mistake' | 'good' | 'bad',
@@ -89,6 +112,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       streaks,
       calorieLog,
       insights,
+      weights,
+      workouts,
     });
     setLoading(false);
   }, [user]);
@@ -291,6 +316,48 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('daily_insights').update(updates).eq('user_id', user!.id).eq('id', id);
   }
 
+  // ── Weight helpers ─────────────────────────────────────────────────────────
+
+  async function logWeight(entry: WeightEntry) {
+    setData(prev => {
+      // one entry per day: replace any existing entry for the same date
+      const rest = prev.weights.filter(w => w.date !== entry.date);
+      const weights = [...rest, entry].sort((a, b) => a.date.localeCompare(b.date));
+      return { ...prev, weights };
+    });
+    await supabase.from('weight_entries').upsert({
+      id: entry.id,
+      user_id: user!.id,
+      date: entry.date,
+      weight_kg: entry.weightKg,
+      note: entry.note ?? null,
+    }, { onConflict: 'user_id,date' });
+  }
+
+  async function deleteWeight(id: string) {
+    setData(prev => ({ ...prev, weights: prev.weights.filter(w => w.id !== id) }));
+    await supabase.from('weight_entries').delete().eq('user_id', user!.id).eq('id', id);
+  }
+
+  // ── Workout helpers ────────────────────────────────────────────────────────
+
+  async function addWorkout(session: WorkoutSession) {
+    setData(prev => ({ ...prev, workouts: [session, ...prev.workouts] }));
+    await supabase.from('workout_sessions').insert({
+      id: session.id,
+      user_id: user!.id,
+      date: session.date,
+      started_at: session.startedAt,
+      exercises: session.exercises,
+      total_calories: session.totalCalories,
+    });
+  }
+
+  async function deleteWorkout(id: string) {
+    setData(prev => ({ ...prev, workouts: prev.workouts.filter(w => w.id !== id) }));
+    await supabase.from('workout_sessions').delete().eq('user_id', user!.id).eq('id', id);
+  }
+
   return (
     <DataContext.Provider value={{
       data, loading,
@@ -298,6 +365,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addStreak, deleteStreak, logBreakDate, removeBreakDate,
       logMeal, deleteMeal,
       addInsight, deleteInsight, updateInsightRating, updateInsight,
+      logWeight, deleteWeight,
+      addWorkout, deleteWorkout,
     }}>
       {children}
     </DataContext.Provider>

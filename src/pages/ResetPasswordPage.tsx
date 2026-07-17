@@ -116,12 +116,12 @@ export default function ResetPasswordPage() {
           />
 
           {error && (
-            <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
+            <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(248,113,113,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
               {error}
             </p>
           )}
           {success && (
-            <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(0,255,157,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
+            <p style={{ color: 'var(--accent-primary)', fontSize: '0.8rem', padding: '0.6rem', background: 'rgba(52,211,153,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
               Password updated! Redirecting to sign in…
             </p>
           )}

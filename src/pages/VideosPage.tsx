@@ -195,7 +195,7 @@ export default function VideosPage() {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Exercise Videos</h1>
+        <h1 className="page-title" style={{ marginBottom: 0 }}>Exercise Videos</h1>
         <button className="btn-primary" onClick={handleAddVideoClick}>
           <Plus size={16} /> Add Video
         </button>
@@ -228,7 +228,7 @@ export default function VideosPage() {
                 padding: '1.5rem',
                 textAlign: 'center',
                 cursor: 'pointer',
-                background: file ? 'rgba(0,255,157,0.05)' : 'transparent',
+                background: file ? 'rgba(52,211,153,0.05)' : 'transparent',
                 transition: 'all 0.2s',
               }}
               onClick={() => fileRef.current?.click()}
@@ -351,7 +351,7 @@ export default function VideosPage() {
                         autoFocus
                       />
                       <button
-                        style={{ background: 'rgba(0,255,157,0.1)', border: '1px solid var(--accent-primary)', borderRadius: '6px', cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
+                        style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid var(--accent-primary)', borderRadius: '6px', cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
                         onClick={() => handleRename(v)}
                         title="Save name"
                       >
@@ -402,7 +402,7 @@ export default function VideosPage() {
                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
                   <button
                     style={{
-                      background: playingId === v.id ? 'rgba(0,255,157,0.15)' : 'rgba(0,255,157,0.06)',
+                      background: playingId === v.id ? 'rgba(52,211,153,0.15)' : 'rgba(52,211,153,0.06)',
                       border: '1px solid var(--accent-primary)',
                       borderRadius: '6px',
                       padding: '0.4rem 0.75rem',

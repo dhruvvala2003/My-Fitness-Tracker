@@ -8,12 +8,12 @@ import HabitsPage from './pages/HabitsPage';
 import StreaksPage from './pages/StreaksPage';
 import StreakDetailPage from './pages/StreakDetailPage';
 import CaloriesPage from './pages/CaloriesPage';
-import ChartsPage from './pages/ChartsPage';
+import ProgressPage from './pages/ProgressPage';
 import SettingsPage from './pages/SettingsPage';
 import ContactPage from './pages/ContactPage';
 import InsightsPage from './pages/InsightsPage';
 import VideosPage from './pages/VideosPage';
-import ExercisesPage from './pages/ExercisesPage';
+import WorkoutPage from './pages/WorkoutPage';
 import AdminPage from './pages/AdminPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
@@ -46,12 +46,15 @@ function AppRoutes() {
               <Route path="/streaks"     element={<StreaksPage />} />
               <Route path="/streaks/:id" element={<StreakDetailPage />} />
               <Route path="/calories"    element={<CaloriesPage />} />
-              <Route path="/charts"      element={<ChartsPage />} />
+              <Route path="/progress"    element={<ProgressPage />} />
               <Route path="/settings"    element={<SettingsPage />} />
               <Route path="/contact"     element={<ContactPage />} />
               <Route path="/insights"    element={<InsightsPage />} />
               <Route path="/videos"      element={<VideosPage />} />
-              <Route path="/exercises"   element={<ExercisesPage />} />
+              <Route path="/workout"     element={<WorkoutPage />} />
+              {/* legacy URLs from the old tab layout */}
+              <Route path="/charts"      element={<Navigate to="/progress" replace />} />
+              <Route path="/exercises"   element={<Navigate to="/workout" replace />} />
               <Route path="/admin"       element={<AdminPage />} />
             </Routes>
           </Layout>

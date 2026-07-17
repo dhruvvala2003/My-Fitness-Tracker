@@ -88,8 +88,8 @@ export default function SettingsPage() {
                     flexShrink: 0,
                     width: 36, height: 36,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: hidden ? 'rgba(255,71,87,0.08)' : 'rgba(0,255,157,0.08)',
-                    border: `1px solid ${hidden ? 'rgba(255,71,87,0.3)' : 'rgba(0,255,157,0.25)'}`,
+                    background: hidden ? 'rgba(248,113,113,0.08)' : 'rgba(52,211,153,0.08)',
+                    border: `1px solid ${hidden ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.25)'}`,
                     borderRadius: 8,
                     cursor: 'pointer',
                     color: hidden ? 'var(--accent-danger)' : 'var(--accent-primary)',
@@ -112,8 +112,8 @@ export default function SettingsPage() {
                 {hidden && (
                   <span style={{
                     flexShrink: 0, fontSize: '0.65rem', fontWeight: 700,
-                    color: 'var(--accent-danger)', background: 'rgba(255,71,87,0.1)',
-                    border: '1px solid rgba(255,71,87,0.25)',
+                    color: 'var(--accent-danger)', background: 'rgba(248,113,113,0.1)',
+                    border: '1px solid rgba(248,113,113,0.25)',
                     borderRadius: 20, padding: '0.15rem 0.5rem',
                     letterSpacing: '0.06em', textTransform: 'uppercase',
                     whiteSpace: 'nowrap',
@@ -206,12 +206,12 @@ export default function SettingsPage() {
                   autoComplete="new-password"
                 />
                 {pwError && (
-                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-danger)', padding: '0.5rem', background: 'rgba(255,71,87,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-danger)', padding: '0.5rem', background: 'rgba(248,113,113,0.08)', borderRadius: '8px', lineHeight: 1.5 }}>
                     {pwError}
                   </p>
                 )}
                 {pwSuccess && (
-                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-primary)', padding: '0.5rem', background: 'rgba(0,255,157,0.08)', borderRadius: '8px' }}>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--accent-primary)', padding: '0.5rem', background: 'rgba(52,211,153,0.08)', borderRadius: '8px' }}>
                     Password updated successfully.
                   </p>
                 )}
@@ -234,7 +234,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Danger zone ── */}
-      <div className="card" style={{ borderColor: 'rgba(255,71,87,0.3)' }}>
+      <div className="card" style={{ borderColor: 'rgba(248,113,113,0.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
           <AlertTriangle size={16} color="var(--accent-danger)" />
           <p style={{ fontWeight: 600, color: 'var(--accent-danger)' }}>Danger Zone</p>

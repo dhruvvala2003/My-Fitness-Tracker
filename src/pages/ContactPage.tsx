@@ -31,7 +31,7 @@ export default function ContactPage() {
           transform: 'translateX(-50%)',
           width: 110, height: 110,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #00ff9d, #7c3aed)',
+          background: 'linear-gradient(135deg, #34d399, #a78bfa)',
           filter: 'blur(16px)',
           opacity: 0.45,
           pointerEvents: 'none',
@@ -43,7 +43,7 @@ export default function ContactPage() {
             width: 110, height: 110,
             borderRadius: '50%',
             border: '3px solid var(--accent-primary)',
-            boxShadow: '0 0 24px rgba(0,255,157,0.4)',
+            boxShadow: '0 0 24px rgba(52,211,153,0.4)',
             overflow: 'hidden',
             marginBottom: '1rem',
             flexShrink: 0,
@@ -59,7 +59,7 @@ export default function ContactPage() {
           <h2 style={{
             fontFamily: 'JetBrains Mono, monospace',
             fontSize: '1.5rem', fontWeight: 700,
-            background: 'linear-gradient(135deg, #00ff9d, #00d4ff)',
+            background: 'linear-gradient(135deg, #34d399, #38bdf8)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
             marginBottom: '0.25rem',
           }}>
@@ -79,9 +79,9 @@ export default function ContactPage() {
           <div style={{ display: 'flex', gap: '0.625rem', flexWrap: 'wrap', justifyContent: 'center' }}>
             <a
               href="mailto:dkvala2003@gmail.com"
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(0,255,157,0.08)', border: '1px solid rgba(0,255,157,0.25)', borderRadius: '8px', padding: '0.45rem 0.875rem', color: 'var(--accent-primary)', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600, transition: 'all 160ms' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,255,157,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,255,157,0.08)')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: '8px', padding: '0.45rem 0.875rem', color: 'var(--accent-primary)', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600, transition: 'all 160ms' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(52,211,153,0.15)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(52,211,153,0.08)')}
             >
               <Mail size={14} /> dkvala2003@gmail.com
             </a>
@@ -141,7 +141,7 @@ export default function ContactPage() {
           {SKILLS.map(skill => (
             <span key={skill} style={{
               background: 'var(--bg-tertiary)',
-              border: '1px solid rgba(0,255,157,0.15)',
+              border: '1px solid rgba(52,211,153,0.15)',
               borderRadius: '20px',
               padding: '0.3rem 0.875rem',
               fontSize: '0.78rem',

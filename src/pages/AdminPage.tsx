@@ -16,9 +16,9 @@ interface ApprovalRecord {
 type FilterTab = 'pending' | 'approved' | 'inactive' | 'all';
 
 const STATUS_STYLE: Record<string, React.CSSProperties> = {
-  pending:  { background: 'rgba(255,165,2,0.12)',  color: '#ffa502', border: '1px solid rgba(255,165,2,0.3)'  },
-  approved: { background: 'rgba(0,255,157,0.08)',  color: 'var(--accent-primary)', border: '1px solid rgba(0,255,157,0.25)' },
-  inactive: { background: 'rgba(255,71,87,0.1)',   color: 'var(--accent-danger)',  border: '1px solid rgba(255,71,87,0.3)'  },
+  pending:  { background: 'rgba(251,191,36,0.12)',  color: '#fbbf24', border: '1px solid rgba(251,191,36,0.3)'  },
+  approved: { background: 'rgba(52,211,153,0.08)',  color: 'var(--accent-primary)', border: '1px solid rgba(52,211,153,0.25)' },
+  inactive: { background: 'rgba(248,113,113,0.1)',   color: 'var(--accent-danger)',  border: '1px solid rgba(248,113,113,0.3)'  },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -115,7 +115,7 @@ export default function AdminPage() {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.5rem' }}>
         {[
-          { label: 'Pending',  value: counts.pending,  color: '#ffa502' },
+          { label: 'Pending',  value: counts.pending,  color: '#fbbf24' },
           { label: 'Approved', value: counts.approved, color: 'var(--accent-primary)' },
           { label: 'Inactive', value: counts.inactive, color: 'var(--accent-danger)' },
         ].map(s => (
