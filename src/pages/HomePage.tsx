@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, Check } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
+import { TiltCard, CountUp } from '../components/effects';
+import { finePointer } from '../utils/motion';
 import type { StreakData } from '../types';
 import { today, daysDiff } from '../utils/dateHelpers';
 
@@ -124,83 +126,11 @@ function currentStreakDays(s: StreakData): number {
   return daysDiff([...s.breakDates].sort().slice(-1)[0], t);
 }
 
-const reducedMotion = typeof window !== 'undefined'
-  && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-const finePointer = typeof window !== 'undefined'
-  && !!window.matchMedia?.('(pointer: fine)').matches
-  && !reducedMotion;
-
 /* Daily content picks — computed once at load, not during render */
 const DAY_OF_YEAR = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
 const QUOTE     = QUOTES[DAY_OF_YEAR % QUOTES.length];
 const CHALLENGE = CHALLENGES[new Date().getDay()];
 const FACT      = FACTS[DAY_OF_YEAR % FACTS.length];
-
-/* ─── 3D tilt card ─────────────────────────────────────────────────── */
-function TiltCard({ children, className = '', style, onClick }: {
-  children: React.ReactNode;
-  className?: string;
-  style?: React.CSSProperties;
-  onClick?: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  function onMove(e: React.MouseEvent) {
-    const el = ref.current;
-    if (!el || !finePointer) return;
-    const r = el.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width;
-    const py = (e.clientY - r.top) / r.height;
-    el.style.setProperty('--rx', `${(0.5 - py) * 8}deg`);
-    el.style.setProperty('--ry', `${(px - 0.5) * 10}deg`);
-    el.style.setProperty('--gx', `${px * 100}%`);
-    el.style.setProperty('--gy', `${py * 100}%`);
-  }
-
-  function onLeave() {
-    const el = ref.current;
-    if (!el) return;
-    el.style.setProperty('--rx', '0deg');
-    el.style.setProperty('--ry', '0deg');
-  }
-
-  return (
-    <div ref={ref} className={`tilt-card ${className}`} style={style}
-      onClick={onClick} onMouseMove={onMove} onMouseLeave={onLeave}>
-      {children}
-      <span className="tilt-glare" />
-    </div>
-  );
-}
-
-/* ─── Animated count-up number ─────────────────────────────────────── */
-function CountUp({ value, suffix = '' }: { value: number; suffix?: string }) {
-  const [n, setN] = useState(0);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || reducedMotion) return;
-    let raf = 0;
-    const io = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      io.disconnect();
-      const t0 = performance.now();
-      const dur = 900;
-      const tick = (t: number) => {
-        const p = Math.min(1, (t - t0) / dur);
-        setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
-        if (p < 1) raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
-    }, { threshold: 0.4 });
-    io.observe(el);
-    return () => { io.disconnect(); cancelAnimationFrame(raf); };
-  }, [value]);
-
-  return <span ref={ref}>{reducedMotion ? value : n}{suffix}</span>;
-}
 
 /* ─── Component ────────────────────────────────────────────────────── */
 export default function HomePage() {

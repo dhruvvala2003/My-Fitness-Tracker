@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, ChevronLeft, ChevronRight, Target, PartyPopper, AlertCircle } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import ProgressCard from '../components/ProgressCard';
@@ -10,6 +10,15 @@ export default function HabitsPage() {
   const { data, loading, toggleHabitCheck } = useAppData();
   const { user } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // Monthly target % — persisted so the forecast survives reloads
+  const [targetPct, setTargetPct] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('fittrack_habit_target') ?? '', 10);
+    return v >= 1 && v <= 100 ? v : 70;
+  });
+  useEffect(() => {
+    localStorage.setItem('fittrack_habit_target', String(targetPct));
+  }, [targetPct]);
 
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -53,6 +62,22 @@ export default function HabitsPage() {
       return acc + visibleIndices.reduce((s, i) => s + (checks[d]?.[i] ? 1 : 0), 0);
     }, 0);
     return (checked / total) * 100;
+  }
+
+  /* ── Target forecast (current month only) ──
+     For each habit: how many of the remaining days must be checked
+     to finish the month at >= targetPct%. */
+  function colForecast(colIdx: number) {
+    const total = days.length;
+    const done = elapsedDays.filter(d => checks[d]?.[colIdx]).length;
+    const targetDays = Math.ceil((targetPct / 100) * total);
+    const needed = Math.max(0, targetDays - done);
+    // days still open for checking: today (if unchecked) + all future days
+    const futureDays = total - now.getDate();
+    const todayOpen = checks[todayStr]?.[colIdx] ? 0 : 1;
+    const remaining = futureDays + todayOpen;
+    const maxPct = Math.round(((done + remaining) / total) * 100);
+    return { done, targetDays, needed, remaining, maxPct, total };
   }
 
   const monthLabel = getMonthLabel(viewYear, viewMonth);
@@ -104,13 +129,80 @@ export default function HabitsPage() {
           value={overallProgress()}
           detail={progressDetail}
         />
-        {visibleIndices.map(i => (
-          <ProgressCard key={i} label={columns[i]} value={colProgress(i)} />
+        {visibleIndices.map((i, idx) => (
+          <ProgressCard key={i} label={columns[i]} value={colProgress(i)} delay={(idx + 1) * 80} />
         ))}
       </div>
 
+      {/* ── Monthly target forecast ── */}
+      {isCurrentMonth && visibleIndices.length > 0 && (
+        <div className="card stagger-in" style={{ marginBottom: '1.5rem', animationDelay: '160ms' }}>
+          <div className="row-between" style={{ flexWrap: 'wrap', gap: '0.75rem', marginBottom: '0.875rem' }}>
+            <div className="row" style={{ gap: '0.5rem' }}>
+              <Target size={16} color="var(--accent-primary)" />
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)' }}>
+                Monthly Target
+              </span>
+            </div>
+            <div className="row" style={{ gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Goal</span>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={100}
+                value={targetPct}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  if (v >= 1 && v <= 100) setTargetPct(v);
+                }}
+                style={{ width: 68, textAlign: 'center', padding: '0.35rem 0.5rem' }}
+              />
+              <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>%</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {visibleIndices.map(i => {
+              const f = colForecast(i);
+              const reached = f.needed === 0;
+              const possible = f.needed <= f.remaining;
+              return (
+                <div key={i} className="row-between forecast-row"
+                  style={{ flexWrap: 'wrap', gap: '0.5rem', padding: '0.55rem 0.7rem', borderRadius: 10, background: 'var(--bg-tertiary)' }}>
+                  <span className="row" style={{ gap: '0.5rem', minWidth: 0 }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {columns[i]}
+                    </span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-faint)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                      {f.done}/{f.targetDays} days
+                    </span>
+                  </span>
+
+                  {reached ? (
+                    <span className="row" style={{ gap: '0.35rem', fontSize: '0.78rem', color: 'var(--accent-primary)', fontWeight: 600 }}>
+                      <PartyPopper size={14} /> {targetPct}% target reached!
+                    </span>
+                  ) : possible ? (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      Do it on <strong style={{ color: 'var(--accent-blue)' }}>{f.needed}</strong> of
+                      the remaining <strong style={{ color: 'var(--text-primary)' }}>{f.remaining}</strong> day{f.remaining !== 1 ? 's' : ''}
+                    </span>
+                  ) : (
+                    <span className="row" style={{ gap: '0.35rem', fontSize: '0.78rem', color: 'var(--accent-warn)' }}>
+                      <AlertCircle size={14} />
+                      Out of reach — best possible now: {f.maxPct}%
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Habit table */}
-      <div className="habit-table-wrapper">
+      <div className="habit-table-wrapper stagger-in" style={{ animationDelay: '240ms' }}>
         <table className="habit-table">
           <thead>
             <tr>

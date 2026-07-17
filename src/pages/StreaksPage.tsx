@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Plus, ChevronRight, Trash2 } from 'lucide-react';
+import { Flame, Plus, ChevronRight, Trash2, AlertTriangle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +28,7 @@ export default function StreaksPage() {
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(today());
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<StreakData | null>(null);
 
   async function handleAddStreak() {
     if (!name.trim()) return;
@@ -43,9 +44,15 @@ export default function StreaksPage() {
     setShowForm(v => !v);
   }
 
-  function handleDeleteStreak(id: string) {
+  function handleDeleteStreak(streak: StreakData) {
     if (!user) { setShowLoginPrompt(true); return; }
-    deleteStreak(id);
+    setConfirmDelete(streak); // ask first — actual delete happens in the dialog
+  }
+
+  async function confirmDeleteStreak() {
+    if (!confirmDelete) return;
+    await deleteStreak(confirmDelete.id);
+    setConfirmDelete(null);
   }
 
   function handleViewStreak(id: string) {
@@ -60,6 +67,42 @@ export default function StreaksPage() {
           message="You need to be signed in to manage your streaks. Sign in to start tracking your consistency!"
           onClose={() => setShowLoginPrompt(false)}
         />
+      )}
+
+      {/* Delete confirmation dialog */}
+      {confirmDelete && (
+        <div className="modal-backdrop" onClick={() => setConfirmDelete(null)}>
+          <div className="modal-card" style={{ maxWidth: 400, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              width: 52, height: 52, borderRadius: '50%',
+              background: 'rgba(248,113,113,0.1)', border: '1.5px solid rgba(248,113,113,0.35)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0.25rem auto 1rem',
+            }}>
+              <AlertTriangle size={24} color="var(--accent-danger)" />
+            </div>
+
+            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+              Delete "{confirmDelete.name}"?
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+              This streak is at <strong style={{ color: 'var(--accent-warn)' }}>{getCurrentStreak(confirmDelete)} days</strong>
+              {confirmDelete.breakDates.length > 0 && <> with {confirmDelete.breakDates.length} break{confirmDelete.breakDates.length > 1 ? 's' : ''} logged</>}.
+              Deleting it removes its entire history. This cannot be undone.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.625rem' }}>
+              <button className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setConfirmDelete(null)} autoFocus>
+                Cancel
+              </button>
+              <button className="btn-danger" style={{ flex: 1, justifyContent: 'center' }}
+                onClick={confirmDeleteStreak}>
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
@@ -137,7 +180,7 @@ export default function StreaksPage() {
                   <button
                     className="btn-danger"
                     style={{ padding: '0.4rem 0.6rem' }}
-                    onClick={() => handleDeleteStreak(streak.id)}
+                    onClick={() => handleDeleteStreak(streak)}
                     title="Delete streak"
                   >
                     <Trash2 size={16} />

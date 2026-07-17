@@ -430,7 +430,19 @@ body {
   transition: width 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.progress-fill::after { content: none; }
+/* moving light sweep across the filled part */
+.progress-fill { position: relative; overflow: hidden; }
+.progress-fill::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; width: 40px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  animation: progressSheen 2.4s ease-in-out infinite;
+}
+
+@keyframes progressSheen {
+  0%   { left: -40px; }
+  60%, 100% { left: 100%; }
+}
 
 /* ── Buttons ── */
 .btn-primary {
@@ -656,11 +668,30 @@ body {
   background: var(--accent-primary-dim);
 }
 
+.check-btn { position: relative; }
+
 .check-btn.checked {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
   color: #06251a;
   animation: checkBounce 140ms ease;
+}
+
+/* expanding ring burst when a habit gets checked */
+.check-btn.checked::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 13px;
+  border: 2px solid var(--accent-primary);
+  opacity: 0;
+  animation: checkRing 480ms ease-out;
+  pointer-events: none;
+}
+
+@keyframes checkRing {
+  0%   { opacity: 0.9; transform: scale(0.55); }
+  100% { opacity: 0;   transform: scale(1.25); }
 }
 
 /* ═══════════════ INSIGHTS ═══════════════ */
@@ -1292,6 +1323,34 @@ body {
   transition: opacity 650ms ease, transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* ── Staggered card entrance (Habits & friends) ── */
+.stagger-in { animation: cardIn 550ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.975); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* forecast rows glide on hover */
+.forecast-row {
+  transition: transform 160ms ease, background 160ms ease !important;
+}
+
+.forecast-row:hover {
+  transform: translateX(5px);
+  background: var(--bg-elevated) !important;
+}
+
+/* today's row breathes softly */
+.habit-table tr.today td:first-child {
+  animation: todayGlow 3s ease-in-out infinite;
+}
+
+@keyframes todayGlow {
+  0%, 100% { box-shadow: inset 3px 0 12px -6px rgba(52, 211, 153, 0.4); }
+  50%      { box-shadow: inset 3px 0 18px -4px rgba(52, 211, 153, 0.75); }
+}
+
 /* ── Motion safety ── */
 @media (prefers-reduced-motion: reduce) {
   .hero-orb, .hero-chip .chip-inner,
@@ -1299,6 +1358,9 @@ body {
   .hero-chip, .hero-content-3d, .tilt-card { transform: none !important; }
   .reveal { opacity: 1; transform: none; }
   .hero-slide.active { animation: none; }
+  .stagger-in, .progress-fill::after, .check-btn.checked::after,
+  .habit-table tr.today td:first-child { animation: none !important; }
+  .forecast-row:hover { transform: none; }
 }
 
 /* ═══════════════ UTILITIES ═══════════════ */
