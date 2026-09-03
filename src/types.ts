@@ -1,8 +1,11 @@
 export interface HabitsData {
   columns: string[];
   hiddenColumns: number[];   // indices of columns hidden from habits table & all calculations
+  overallColumns: number[];  // indices included in the overall progress calculation
   checks: Record<string, Record<string, boolean>>;
 }
+
+export type CoreHabitsData = HabitsData;
 
 export interface StreakData {
   id: string;
@@ -58,6 +61,7 @@ export interface WorkoutSession {
 
 export interface AppData {
   habits: HabitsData;
+  coreHabits: CoreHabitsData;
   streaks: StreakData[];
   calorieLog: Record<string, CalorieEntry[]>;
   insights: InsightEntry[];
@@ -69,6 +73,13 @@ export const DEFAULT_DATA: AppData = {
   habits: {
     columns: ['Go Gym', 'Reading'],
     hiddenColumns: [],
+    overallColumns: [],
+    checks: {},
+  },
+  coreHabits: {
+    columns: [],
+    hiddenColumns: [],
+    overallColumns: [],
     checks: {},
   },
   streaks: [],

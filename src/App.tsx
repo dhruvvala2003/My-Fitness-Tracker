@@ -43,6 +43,7 @@ function AppRoutes() {
             <Routes>
               <Route path="/"            element={<HomePage />} />
               <Route path="/habits"      element={<HabitsPage />} />
+              <Route path="/core-habits" element={<HabitsPage mode="core" />} />
               <Route path="/streaks"     element={<StreaksPage />} />
               <Route path="/streaks/:id" element={<StreakDetailPage />} />
               <Route path="/calories"    element={<CaloriesPage />} />

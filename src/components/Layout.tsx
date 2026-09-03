@@ -20,6 +20,7 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
     label: 'Track',
     items: [
       { to: '/habits',   icon: Calendar, label: 'Habits',   end: true },
+      { to: '/core-habits', icon: Activity, label: 'Core Habits', end: true },
       { to: '/streaks',  icon: Flame,    label: 'Streaks',  end: false },
       { to: '/calories', icon: Zap,      label: 'Calories', end: true },
       { to: '/workout',  icon: Dumbbell, label: 'Workout',  end: true },
@@ -45,6 +46,7 @@ const NAV_GROUPS: { label: string; items: NavEntry[] }[] = [
 const CORE_NAV: NavEntry[] = [
   { to: '/',         icon: Home,     label: 'Home',     end: true },
   { to: '/habits',   icon: Calendar, label: 'Habits',   end: true },
+  { to: '/core-habits', icon: Activity, label: 'Core Habits', end: true },
   { to: '/insights', icon: Lightbulb, label: 'Insights', end: true },
   { to: '/videos',   icon: Video,     label: 'Videos',   end: true },
 ];

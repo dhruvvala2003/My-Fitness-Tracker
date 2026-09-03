@@ -1,15 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Check, ChevronLeft, ChevronRight, Target, PartyPopper, AlertCircle } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Target, PartyPopper, AlertCircle, SlidersHorizontal, Plus } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import ProgressCard from '../components/ProgressCard';
 import LoginPromptModal from '../components/LoginPromptModal';
 import { today, getMonthDays, getMonthLabel, formatDisplayDate } from '../utils/dateHelpers';
 
-export default function HabitsPage() {
-  const { data, loading, toggleHabitCheck } = useAppData();
+type HabitsPageProps = { mode?: 'main' | 'core' };
+
+export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
+  const isCore = mode === 'core';
+  const {
+    data, loading,
+    toggleHabitCheck, toggleOverallColumn,
+    toggleCoreHabitCheck, addCoreHabitColumn, deleteCoreHabitColumn,
+    renameCoreHabitColumn, toggleCoreColumnVisibility, toggleCoreOverallColumn,
+  } = useAppData();
   const { user } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [newCoreHabit, setNewCoreHabit] = useState('');
 
   // Monthly target % — persisted so the forecast survives reloads
   const [targetPct, setTargetPct] = useState<number>(() => {
@@ -24,9 +33,14 @@ export default function HabitsPage() {
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
 
-  const { columns, checks } = data.habits;
-  const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
+  const habits = isCore ? data.coreHabits : data.habits;
+  const columns = habits.columns;
+  const checks = habits.checks;
+  const hiddenColumns: number[] = habits.hiddenColumns ?? [];
   const visibleIndices = columns.map((_, i) => i).filter(i => !hiddenColumns.includes(i));
+  const overallIndices = visibleIndices.filter(i => (habits.overallColumns ?? visibleIndices).includes(i));
+  const toggleCheck = isCore ? toggleCoreHabitCheck : toggleHabitCheck;
+  const toggleOverall = isCore ? toggleCoreOverallColumn : toggleOverallColumn;
   const todayStr = today();
 
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
@@ -56,12 +70,20 @@ export default function HabitsPage() {
   }
 
   function overallProgress() {
-    const total = elapsedDays.length * visibleIndices.length;
+    const total = elapsedDays.length * overallIndices.length;
     if (total === 0) return 0;
     const checked = elapsedDays.reduce((acc, d) => {
-      return acc + visibleIndices.reduce((s, i) => s + (checks[d]?.[i] ? 1 : 0), 0);
+      return acc + overallIndices.reduce((s, i) => s + (checks[d]?.[i] ? 1 : 0), 0);
     }, 0);
     return (checked / total) * 100;
+  }
+
+  async function handleAddCoreHabit() {
+    const name = newCoreHabit.trim();
+    if (!name || columns.length >= 4) return;
+    if (!user) { setShowLoginPrompt(true); return; }
+    await addCoreHabitColumn(name);
+    setNewCoreHabit('');
   }
 
   /* ── Target forecast (current month only) ──
@@ -97,12 +119,38 @@ export default function HabitsPage() {
     <div className="page">
       {showLoginPrompt && (
         <LoginPromptModal
-          message="You need to be signed in to track your habits. Sign in to start checking off your daily goals!"
+          message={`You need to be signed in to track your ${isCore ? 'core habits' : 'habits'}. Sign in to start checking off your daily goals!`}
           onClose={() => setShowLoginPrompt(false)}
         />
       )}
 
-      <h1 className="page-title">Habits</h1>
+      <h1 className="page-title">{isCore ? 'Core Habits' : 'Habits'}</h1>
+
+      {isCore && (
+        <div className="card" style={{ marginBottom: '1.25rem' }}>
+          <div className="row-between" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Add Core Habit</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Track the habits that support everything else.</p>
+            </div>
+            {columns.length < 4 && (
+              <div style={{ display: 'flex', gap: '0.5rem', flex: '1 1 280px', maxWidth: 420 }}>
+                <input
+                  className="input"
+                  placeholder='e.g. "Sleep 8 hours"'
+                  value={newCoreHabit}
+                  onChange={e => setNewCoreHabit(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleAddCoreHabit()}
+                  maxLength={30}
+                />
+                <button className="btn-primary" onClick={handleAddCoreHabit} style={{ flexShrink: 0 }}>
+                  <Plus size={15} /> Add
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Month navigation */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -133,6 +181,36 @@ export default function HabitsPage() {
           <ProgressCard key={i} label={columns[i]} value={colProgress(i)} delay={(idx + 1) * 80} />
         ))}
       </div>
+
+      {visibleIndices.length > 0 && (
+        <div className="card stagger-in" style={{ marginBottom: '1.5rem', animationDelay: '80ms' }}>
+          <div className="row" style={{ gap: '0.5rem', marginBottom: '0.35rem' }}>
+            <SlidersHorizontal size={16} color="var(--accent-primary)" />
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-secondary)' }}>
+              Overall calculation
+            </span>
+          </div>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+            Choose which habits contribute to the Overall percentage.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {visibleIndices.map(i => (
+              <label key={i} className="row" style={{ gap: '0.4rem', fontSize: '0.82rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={overallIndices.includes(i)}
+                  disabled={overallIndices.length === 1 && overallIndices.includes(i)}
+                  onChange={() => {
+                    if (!user) { setShowLoginPrompt(true); return; }
+                    toggleOverall(i);
+                  }}
+                />
+                {columns[i]}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Monthly target forecast ── */}
       {isCurrentMonth && visibleIndices.length > 0 && (
@@ -226,7 +304,7 @@ export default function HabitsPage() {
                           className={`check-btn${checked ? ' checked' : ''}`}
                           onClick={() => {
                             if (!user) { setShowLoginPrompt(true); return; }
-                            if (!isFuture) toggleHabitCheck(dateStr, colIdx);
+                            if (!isFuture) toggleCheck(dateStr, colIdx);
                           }}
                           disabled={isFuture}
                           aria-label={checked ? 'Uncheck' : 'Check'}
@@ -243,16 +321,34 @@ export default function HabitsPage() {
         </table>
       </div>
 
+      {isCore && columns.length > 0 && (
+        <div className="card" style={{ marginTop: '1rem' }}>
+          <p style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Manage Core Habits</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {columns.map((column, i) => (
+              <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <input className="input" value={column} maxLength={30}
+                  onChange={e => user && renameCoreHabitColumn(i, e.target.value)} />
+                <button className="btn-secondary" onClick={() => user && toggleCoreColumnVisibility(i)}>
+                  {hiddenColumns.includes(i) ? 'Show' : 'Hide'}
+                </button>
+                <button className="btn-danger" onClick={() => user && deleteCoreHabitColumn(i)}>Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {columns.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'center' }}>
           {user
-            ? 'No habit columns yet. Go to Settings to add some.'
+            ? `No ${isCore ? 'core ' : ''}habit columns yet. ${isCore ? 'Add one above.' : 'Go to Settings to add some.'}`
             : 'Sign in to create and track your habits.'}
         </p>
       )}
       {columns.length > 0 && visibleIndices.length === 0 && (
         <p style={{ color: 'var(--text-secondary)', marginTop: '1rem', textAlign: 'center' }}>
-          All columns are hidden. Toggle visibility in Settings.
+          All columns are hidden. Toggle visibility above.
         </p>
       )}
     </div>

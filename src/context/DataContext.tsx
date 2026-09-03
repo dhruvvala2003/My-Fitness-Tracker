@@ -13,6 +13,13 @@ interface DataContextType {
   deleteHabitColumn: (idx: number) => Promise<void>;
   renameHabitColumn: (idx: number, name: string) => Promise<void>;
   toggleColumnVisibility: (idx: number) => Promise<void>;
+  toggleOverallColumn: (idx: number) => Promise<void>;
+  toggleCoreHabitCheck: (date: string, colIdx: number) => Promise<void>;
+  addCoreHabitColumn: (name: string) => Promise<void>;
+  deleteCoreHabitColumn: (idx: number) => Promise<void>;
+  renameCoreHabitColumn: (idx: number, name: string) => Promise<void>;
+  toggleCoreColumnVisibility: (idx: number) => Promise<void>;
+  toggleCoreOverallColumn: (idx: number) => Promise<void>;
   // Streaks
   addStreak: (streak: StreakData) => Promise<void>;
   deleteStreak: (id: string) => Promise<void>;
@@ -46,9 +53,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     const uid = user.id;
 
-    const [configResult, checksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult] = await Promise.all([
+    const [configResult, checksResult, coreConfigResult, coreChecksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult] = await Promise.all([
       supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('habit_checks').select('*').eq('user_id', uid),
+      supabase.from('core_habits_config').select('*').eq('user_id', uid).maybeSingle(),
+      supabase.from('core_habit_checks').select('*').eq('user_id', uid),
       supabase.from('streaks').select('*').eq('user_id', uid).order('created_at'),
       supabase.from('calorie_entries').select('*').eq('user_id', uid).order('time'),
       supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
@@ -61,6 +70,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     for (const row of (checksResult.data ?? [])) {
       if (!checks[row.date]) checks[row.date] = {};
       checks[row.date][String(row.col_idx)] = true;
+    }
+
+    const coreChecks: Record<string, Record<string, boolean>> = {};
+    for (const row of (coreChecksResult.data ?? [])) {
+      if (!coreChecks[row.date]) coreChecks[row.date] = {};
+      coreChecks[row.date][String(row.col_idx)] = true;
     }
 
     // Build calorie log grouped by date
@@ -78,6 +93,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }));
 
     const config = configResult.data;
+    const configColumns: string[] = config?.columns ?? [];
+    const configuredOverall: number[] = config?.overall_columns ?? [];
+    const coreConfig = coreConfigResult.data;
+    const coreColumns: string[] = coreConfig?.columns ?? [];
+    const coreOverall: number[] = coreConfig?.overall_columns ?? [];
 
     const weights: WeightEntry[] = (weightsResult.data ?? []).map(row => ({
       id: row.id,
@@ -105,9 +125,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     setData({
       habits: {
-        columns: config?.columns ?? [],
+        columns: configColumns,
         hiddenColumns: config?.hidden_columns ?? [],
+        overallColumns: configuredOverall.length > 0 ? configuredOverall : configColumns.map((_, i) => i),
         checks,
+      },
+      coreHabits: {
+        columns: coreColumns,
+        hiddenColumns: coreConfig?.hidden_columns ?? [],
+        overallColumns: coreOverall.length > 0 ? coreOverall : coreColumns.map((_, i) => i),
+        checks: coreChecks,
       },
       streaks,
       calorieLog,
@@ -122,11 +149,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // ── Habit helpers ──────────────────────────────────────────────────────────
 
-  async function upsertHabitsConfig(columns: string[], hiddenColumns: number[]) {
+  async function upsertHabitsConfig(columns: string[], hiddenColumns: number[], overallColumns = data.habits.overallColumns) {
     await supabase.from('habits_config').upsert({
       user_id: user!.id,
       columns,
       hidden_columns: hiddenColumns,
+      overall_columns: overallColumns,
       updated_at: new Date().toISOString(),
     });
   }
@@ -153,8 +181,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   async function addHabitColumn(name: string) {
     const newColumns = [...data.habits.columns, name];
-    setData(prev => ({ ...prev, habits: { ...prev.habits, columns: newColumns } }));
-    await upsertHabitsConfig(newColumns, data.habits.hiddenColumns);
+    const newOverall = [...data.habits.overallColumns, data.habits.columns.length];
+    setData(prev => ({ ...prev, habits: { ...prev.habits, columns: newColumns, overallColumns: newOverall } }));
+    await upsertHabitsConfig(newColumns, data.habits.hiddenColumns, newOverall);
   }
 
   async function deleteHabitColumn(idx: number) {
@@ -163,6 +192,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const newHidden = data.habits.hiddenColumns
       .filter(h => h !== idx)
       .map(h => (h > idx ? h - 1 : h));
+    const newOverall = data.habits.overallColumns
+      .filter(i => i !== idx)
+      .map(i => (i > idx ? i - 1 : i));
 
     setData(prev => {
       // Rebuild checks with shifted indices
@@ -176,7 +208,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
         newChecks[date] = updated;
       }
-      return { ...prev, habits: { columns: newColumns, hiddenColumns: newHidden, checks: newChecks } };
+      return { ...prev, habits: { columns: newColumns, hiddenColumns: newHidden, overallColumns: newOverall, checks: newChecks } };
     });
 
     // 1. Delete the column's check rows
@@ -193,7 +225,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    await upsertHabitsConfig(newColumns, newHidden);
+    await upsertHabitsConfig(newColumns, newHidden, newOverall);
   }
 
   async function renameHabitColumn(idx: number, name: string) {
@@ -207,6 +239,88 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const newHidden = cur.includes(idx) ? cur.filter(h => h !== idx) : [...cur, idx];
     setData(prev => ({ ...prev, habits: { ...prev.habits, hiddenColumns: newHidden } }));
     await upsertHabitsConfig(data.habits.columns, newHidden);
+  }
+
+  async function toggleOverallColumn(idx: number) {
+    const cur = data.habits.overallColumns;
+    if (cur.length === 1 && cur.includes(idx)) return;
+    const newOverall = cur.includes(idx) ? cur.filter(i => i !== idx) : [...cur, idx];
+    setData(prev => ({ ...prev, habits: { ...prev.habits, overallColumns: newOverall } }));
+    await upsertHabitsConfig(data.habits.columns, data.habits.hiddenColumns, newOverall);
+  }
+
+  async function upsertCoreHabitsConfig(columns: string[], hiddenColumns: number[], overallColumns: number[]) {
+    await supabase.from('core_habits_config').upsert({
+      user_id: user!.id, columns, hidden_columns: hiddenColumns, overall_columns: overallColumns,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  async function toggleCoreHabitCheck(date: string, colIdx: number) {
+    const uid = user!.id;
+    const isChecked = !!data.coreHabits.checks[date]?.[String(colIdx)];
+    setData(prev => {
+      const dayChecks = { ...(prev.coreHabits.checks[date] ?? {}) };
+      if (isChecked) delete dayChecks[String(colIdx)]; else dayChecks[String(colIdx)] = true;
+      return { ...prev, coreHabits: { ...prev.coreHabits, checks: { ...prev.coreHabits.checks, [date]: dayChecks } } };
+    });
+    if (isChecked) await supabase.from('core_habit_checks').delete().eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
+    else await supabase.from('core_habit_checks').upsert({ user_id: uid, date, col_idx: colIdx });
+  }
+
+  async function addCoreHabitColumn(name: string) {
+    const newColumns = [...data.coreHabits.columns, name];
+    const newOverall = [...data.coreHabits.overallColumns, data.coreHabits.columns.length];
+    setData(prev => ({ ...prev, coreHabits: { ...prev.coreHabits, columns: newColumns, overallColumns: newOverall } }));
+    await upsertCoreHabitsConfig(newColumns, data.coreHabits.hiddenColumns, newOverall);
+  }
+
+  async function deleteCoreHabitColumn(idx: number) {
+    const uid = user!.id;
+    const newColumns = data.coreHabits.columns.filter((_, i) => i !== idx);
+    const newHidden = data.coreHabits.hiddenColumns.filter(i => i !== idx).map(i => i > idx ? i - 1 : i);
+    const newOverall = data.coreHabits.overallColumns.filter(i => i !== idx).map(i => i > idx ? i - 1 : i);
+    setData(prev => {
+      const newChecks: Record<string, Record<string, boolean>> = {};
+      for (const [date, dayChecks] of Object.entries(prev.coreHabits.checks)) {
+        const updated: Record<string, boolean> = {};
+        for (const [ci, value] of Object.entries(dayChecks)) {
+          const columnIndex = Number(ci);
+          if (columnIndex < idx) updated[ci] = value;
+          else if (columnIndex > idx) updated[String(columnIndex - 1)] = value;
+        }
+        newChecks[date] = updated;
+      }
+      return { ...prev, coreHabits: { columns: newColumns, hiddenColumns: newHidden, overallColumns: newOverall, checks: newChecks } };
+    });
+    await supabase.from('core_habit_checks').delete().eq('user_id', uid).eq('col_idx', idx);
+    const { data: affected } = await supabase.from('core_habit_checks').select('date, col_idx').eq('user_id', uid).gt('col_idx', idx);
+    if (affected && affected.length > 0) {
+      await supabase.from('core_habit_checks').delete().eq('user_id', uid).gt('col_idx', idx);
+      await supabase.from('core_habit_checks').insert(affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1 })));
+    }
+    await upsertCoreHabitsConfig(newColumns, newHidden, newOverall);
+  }
+
+  async function renameCoreHabitColumn(idx: number, name: string) {
+    const newColumns = data.coreHabits.columns.map((column, i) => i === idx ? name : column);
+    setData(prev => ({ ...prev, coreHabits: { ...prev.coreHabits, columns: newColumns } }));
+    await upsertCoreHabitsConfig(newColumns, data.coreHabits.hiddenColumns, data.coreHabits.overallColumns);
+  }
+
+  async function toggleCoreColumnVisibility(idx: number) {
+    const current = data.coreHabits.hiddenColumns;
+    const newHidden = current.includes(idx) ? current.filter(i => i !== idx) : [...current, idx];
+    setData(prev => ({ ...prev, coreHabits: { ...prev.coreHabits, hiddenColumns: newHidden } }));
+    await upsertCoreHabitsConfig(data.coreHabits.columns, newHidden, data.coreHabits.overallColumns);
+  }
+
+  async function toggleCoreOverallColumn(idx: number) {
+    const current = data.coreHabits.overallColumns;
+    if (current.length === 1 && current.includes(idx)) return;
+    const newOverall = current.includes(idx) ? current.filter(i => i !== idx) : [...current, idx];
+    setData(prev => ({ ...prev, coreHabits: { ...prev.coreHabits, overallColumns: newOverall } }));
+    await upsertCoreHabitsConfig(data.coreHabits.columns, data.coreHabits.hiddenColumns, newOverall);
   }
 
   // ── Streak helpers ─────────────────────────────────────────────────────────
@@ -361,7 +475,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   return (
     <DataContext.Provider value={{
       data, loading,
-      toggleHabitCheck, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility,
+      toggleHabitCheck, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleOverallColumn,
+      toggleCoreHabitCheck, addCoreHabitColumn, deleteCoreHabitColumn, renameCoreHabitColumn, toggleCoreColumnVisibility, toggleCoreOverallColumn,
       addStreak, deleteStreak, logBreakDate, removeBreakDate,
       logMeal, deleteMeal,
       addInsight, deleteInsight, updateInsightRating, updateInsight,
