@@ -8,7 +8,6 @@ interface DataContextType {
   data: AppData;
   loading: boolean;
   // Habits
-  toggleHabitCheck: (date: string, colIdx: number) => Promise<void>;
   addHabitColumn: (name: string, description?: string) => Promise<void>;
   deleteHabitColumn: (idx: number) => Promise<void>;
   renameHabitColumn: (idx: number, name: string) => Promise<void>;
@@ -17,7 +16,7 @@ interface DataContextType {
   toggleOverallColumn: (idx: number) => Promise<void>;
   toggleNoteColumn: (idx: number) => Promise<void>;
   updateHabitNote: (date: string, colIdx: number, note: string) => Promise<void>;
-  toggleCoreHabitCheck: (date: string, colIdx: number) => Promise<void>;
+  toggleHabitCheck: (date: string, colIdx: number, note?: string) => Promise<void>;
   addCoreHabitColumn: (name: string, description?: string) => Promise<void>;
   deleteCoreHabitColumn: (idx: number) => Promise<void>;
   renameCoreHabitColumn: (idx: number, name: string) => Promise<void>;
@@ -26,6 +25,7 @@ interface DataContextType {
   toggleCoreOverallColumn: (idx: number) => Promise<void>;
   toggleCoreNoteColumn: (idx: number) => Promise<void>;
   updateCoreHabitNote: (date: string, colIdx: number, note: string) => Promise<void>;
+  toggleCoreHabitCheck: (date: string, colIdx: number, note?: string) => Promise<void>;
   // Streaks
   addStreak: (streak: StreakData) => Promise<void>;
   deleteStreak: (id: string) => Promise<void>;
@@ -183,7 +183,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
-  async function toggleHabitCheck(date: string, colIdx: number) {
+  async function toggleHabitCheck(date: string, colIdx: number, note?: string) {
     const uid = user!.id;
     const isChecked = !!data.habits.checks[date]?.[String(colIdx)];
 
@@ -196,6 +196,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         delete dayNotes[String(colIdx)];
       } else {
         dayChecks[String(colIdx)] = true;
+        if (note) dayNotes[String(colIdx)] = note;
       }
       return { ...prev, habits: { ...prev.habits, checks: { ...prev.habits.checks, [date]: dayChecks }, notes: { ...prev.habits.notes, [date]: dayNotes } } };
     });
@@ -204,7 +205,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await supabase.from('habit_checks').delete()
         .eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
     } else {
-      await supabase.from('habit_checks').upsert({ user_id: uid, date, col_idx: colIdx });
+      await supabase.from('habit_checks').upsert({ user_id: uid, date, col_idx: colIdx, note: note || null });
     }
   }
 
@@ -328,7 +329,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }
 
-  async function toggleCoreHabitCheck(date: string, colIdx: number) {
+  async function toggleCoreHabitCheck(date: string, colIdx: number, note?: string) {
     const uid = user!.id;
     const isChecked = !!data.coreHabits.checks[date]?.[String(colIdx)];
     setData(prev => {
@@ -339,11 +340,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         delete dayNotes[String(colIdx)]; // clear note on uncheck
       } else {
         dayChecks[String(colIdx)] = true;
+        if (note) dayNotes[String(colIdx)] = note;
       }
       return { ...prev, coreHabits: { ...prev.coreHabits, checks: { ...prev.coreHabits.checks, [date]: dayChecks }, notes: { ...prev.coreHabits.notes, [date]: dayNotes } } };
     });
     if (isChecked) await supabase.from('core_habit_checks').delete().eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
-    else await supabase.from('core_habit_checks').upsert({ user_id: uid, date, col_idx: colIdx });
+    else await supabase.from('core_habit_checks').upsert({ user_id: uid, date, col_idx: colIdx, note: note || null });
   }
 
   async function addCoreHabitColumn(name: string, description = '') {

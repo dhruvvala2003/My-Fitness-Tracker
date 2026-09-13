@@ -15,7 +15,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
     toggleHabitCheck, toggleOverallColumn,
     toggleCoreHabitCheck, addCoreHabitColumn, deleteCoreHabitColumn,
     renameCoreHabitColumn, toggleCoreColumnVisibility, toggleCoreOverallColumn,
-    toggleNoteColumn, toggleCoreNoteColumn, updateHabitNote, updateCoreHabitNote,
+    toggleNoteColumn, toggleCoreNoteColumn,
   } = useAppData();
   const { user } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
@@ -45,7 +45,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
   const toggleCheck = isCore ? toggleCoreHabitCheck : toggleHabitCheck;
   const toggleOverall = isCore ? toggleCoreOverallColumn : toggleOverallColumn;
   const toggleNote = isCore ? toggleCoreNoteColumn : toggleNoteColumn;
-  const updateNote = isCore ? updateCoreHabitNote : updateHabitNote;
+
   const todayStr = today();
 
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
@@ -140,8 +140,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
               onChange={e => setNotePrompt({ ...notePrompt, text: e.target.value })}
               onKeyDown={e => {
                 if (e.key === 'Enter') {
-                  updateNote(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
-                  toggleCheck(notePrompt.date, notePrompt.colIdx);
+                  toggleCheck(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
                   setNotePrompt(null);
                 }
               }}
@@ -153,8 +152,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
                 setNotePrompt(null);
               }}>Skip</button>
               <button className="btn-primary" onClick={() => {
-                updateNote(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
-                toggleCheck(notePrompt.date, notePrompt.colIdx);
+                toggleCheck(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
                 setNotePrompt(null);
               }}>Save</button>
             </div>
