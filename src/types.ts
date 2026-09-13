@@ -1,8 +1,11 @@
 export interface HabitsData {
   columns: string[];
+  descriptions: string[];   // optional hover text/description for each habit column
   hiddenColumns: number[];   // indices of columns hidden from habits table & all calculations
   overallColumns: number[];  // indices included in the overall progress calculation
+  noteColumns: number[];     // indices of columns that have notes enabled
   checks: Record<string, Record<string, boolean>>;
+  notes: Record<string, Record<string, string>>;
 }
 
 export type CoreHabitsData = HabitsData;
@@ -72,15 +75,21 @@ export interface AppData {
 export const DEFAULT_DATA: AppData = {
   habits: {
     columns: ['Go Gym', 'Reading'],
+    descriptions: ['', ''],
     hiddenColumns: [],
     overallColumns: [],
+    noteColumns: [],
     checks: {},
+    notes: {},
   },
   coreHabits: {
     columns: [],
+    descriptions: [],
     hiddenColumns: [],
     overallColumns: [],
+    noteColumns: [],
     checks: {},
+    notes: {},
   },
   streaks: [],
   calorieLog: {},

@@ -3,13 +3,17 @@
 -- Add this column to the existing habits_config table if it predates
 -- per-column overall progress selection.
 alter table if exists public.habits_config
-  add column if not exists overall_columns jsonb not null default '[]'::jsonb;
+  add column if not exists overall_columns jsonb not null default '[]'::jsonb,
+  add column if not exists note_columns jsonb not null default '[]'::jsonb,
+  add column if not exists descriptions jsonb not null default '[]'::jsonb;
 
 create table if not exists public.core_habits_config (
   user_id uuid primary key references auth.users (id) on delete cascade,
   columns jsonb not null default '[]'::jsonb,
   hidden_columns jsonb not null default '[]'::jsonb,
   overall_columns jsonb not null default '[]'::jsonb,
+  note_columns jsonb not null default '[]'::jsonb,
+  descriptions jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
 
@@ -22,6 +26,7 @@ create table if not exists public.core_habit_checks (
   user_id uuid not null references auth.users (id) on delete cascade,
   date date not null,
   col_idx integer not null,
+  note text,
   primary key (user_id, date, col_idx)
 );
 
@@ -29,6 +34,23 @@ alter table public.core_habit_checks enable row level security;
 drop policy if exists "Users manage own core habit checks" on public.core_habit_checks;
 create policy "Users manage own core habit checks" on public.core_habit_checks
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Add note_columns and descriptions to existing habits_config in case they are missing (for existing users)
+alter table if exists public.habits_config
+  add column if not exists note_columns jsonb not null default '[]'::jsonb;
+alter table if exists public.habits_config
+  add column if not exists descriptions jsonb not null default '[]'::jsonb;
+
+-- Also we need habit_checks for note? The user didn't mention adding note to regular habits explicitly but wanted the setting for it.
+-- Let's add `note` to `habit_checks` and `note_columns` to `habits_config` for consistency.
+alter table if exists public.habit_checks
+  add column if not exists note text;
+
+-- and core_habits_config for existing users
+alter table if exists public.core_habits_config
+  add column if not exists note_columns jsonb not null default '[]'::jsonb;
+alter table if exists public.core_habits_config
+  add column if not exists descriptions jsonb not null default '[]'::jsonb;
 
 -- FitTrack — new tables for the Progress & Workout features
 -- Run this once in your Supabase project:

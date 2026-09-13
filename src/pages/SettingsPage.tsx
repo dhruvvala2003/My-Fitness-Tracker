@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
-  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility } = useAppData();
+  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleNoteColumn } = useAppData();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const [newCol, setNewCol] = useState('');
@@ -24,8 +24,10 @@ export default function SettingsPage() {
 
   const columns = data.habits.columns;
   const hiddenColumns: number[] = data.habits.hiddenColumns ?? [];
+  const noteColumns: number[] = data.habits.noteColumns ?? [];
 
   function isHidden(idx: number) { return hiddenColumns.includes(idx); }
+  function isNoteEnabled(idx: number) { return noteColumns.includes(idx); }
 
   function requireAuth(action: () => void) {
     if (!user) { setShowLoginPrompt(true); return; }
@@ -121,6 +123,18 @@ export default function SettingsPage() {
                     hidden
                   </span>
                 )}
+
+                {/* Enable Notes toggle */}
+                <button
+                  className={isNoteEnabled(i) ? 'btn-primary' : 'btn-secondary'}
+                  style={{ padding: '0.5rem', flexShrink: 0 }}
+                  onClick={() => requireAuth(() => toggleNoteColumn(i))}
+                  title={isNoteEnabled(i) ? 'Notes enabled' : 'Enable notes'}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
 
                 {/* Delete */}
                 <button

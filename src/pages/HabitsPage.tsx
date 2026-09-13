@@ -15,10 +15,12 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
     toggleHabitCheck, toggleOverallColumn,
     toggleCoreHabitCheck, addCoreHabitColumn, deleteCoreHabitColumn,
     renameCoreHabitColumn, toggleCoreColumnVisibility, toggleCoreOverallColumn,
+    toggleNoteColumn, toggleCoreNoteColumn, updateHabitNote, updateCoreHabitNote,
   } = useAppData();
   const { user } = useAuth();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [newCoreHabit, setNewCoreHabit] = useState('');
+  const [notePrompt, setNotePrompt] = useState<{ date: string, colIdx: number, text: string } | null>(null);
 
   // Monthly target % — persisted so the forecast survives reloads
   const [targetPct, setTargetPct] = useState<number>(() => {
@@ -39,8 +41,11 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
   const hiddenColumns: number[] = habits.hiddenColumns ?? [];
   const visibleIndices = columns.map((_, i) => i).filter(i => !hiddenColumns.includes(i));
   const overallIndices = visibleIndices.filter(i => (habits.overallColumns ?? visibleIndices).includes(i));
+  const noteColumns = habits.noteColumns ?? [];
   const toggleCheck = isCore ? toggleCoreHabitCheck : toggleHabitCheck;
   const toggleOverall = isCore ? toggleCoreOverallColumn : toggleOverallColumn;
+  const toggleNote = isCore ? toggleCoreNoteColumn : toggleNoteColumn;
+  const updateNote = isCore ? updateCoreHabitNote : updateHabitNote;
   const todayStr = today();
 
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
@@ -80,7 +85,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
 
   async function handleAddCoreHabit() {
     const name = newCoreHabit.trim();
-    if (!name || columns.length >= 4) return;
+    if (!name || columns.length >= 10) return;
     if (!user) { setShowLoginPrompt(true); return; }
     await addCoreHabitColumn(name);
     setNewCoreHabit('');
@@ -124,6 +129,39 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
         />
       )}
 
+      {notePrompt && (
+        <div className="note-prompt-overlay" onClick={() => setNotePrompt(null)}>
+          <div className="note-prompt-card" onClick={e => e.stopPropagation()}>
+            <p style={{ fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Add a note (optional)</p>
+            <input
+              autoFocus
+              className="input"
+              value={notePrompt.text}
+              onChange={e => setNotePrompt({ ...notePrompt, text: e.target.value })}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  updateNote(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
+                  toggleCheck(notePrompt.date, notePrompt.colIdx);
+                  setNotePrompt(null);
+                }
+              }}
+              placeholder="E.g., Morning jog, 30 mins"
+            />
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+              <button className="btn-secondary" onClick={() => {
+                toggleCheck(notePrompt.date, notePrompt.colIdx);
+                setNotePrompt(null);
+              }}>Skip</button>
+              <button className="btn-primary" onClick={() => {
+                updateNote(notePrompt.date, notePrompt.colIdx, notePrompt.text.trim());
+                toggleCheck(notePrompt.date, notePrompt.colIdx);
+                setNotePrompt(null);
+              }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <h1 className="page-title">{isCore ? 'Core Habits' : 'Habits'}</h1>
 
       {isCore && (
@@ -133,7 +171,7 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
               <p style={{ fontWeight: 600, marginBottom: '0.25rem' }}>Add Core Habit</p>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Track the habits that support everything else.</p>
             </div>
-            {columns.length < 4 && (
+            {columns.length < 10 && (
               <div style={{ display: 'flex', gap: '0.5rem', flex: '1 1 280px', maxWidth: 420 }}>
                 <input
                   className="input"
@@ -299,18 +337,32 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
                   {visibleIndices.map(colIdx => {
                     const checked = !!checks[dateStr]?.[colIdx];
                     return (
-                      <td key={colIdx}>
+                      <td key={colIdx} style={{ position: 'relative' }}>
                         <button
                           className={`check-btn${checked ? ' checked' : ''}`}
                           onClick={() => {
                             if (!user) { setShowLoginPrompt(true); return; }
-                            if (!isFuture) toggleCheck(dateStr, colIdx);
+                            if (!isFuture) {
+                              if (!checked && noteColumns.includes(colIdx)) {
+                                setNotePrompt({ date: dateStr, colIdx, text: '' });
+                              } else {
+                                toggleCheck(dateStr, colIdx);
+                              }
+                            }
                           }}
                           disabled={isFuture}
                           aria-label={checked ? 'Uncheck' : 'Check'}
                         >
                           {checked && <Check size={16} strokeWidth={3} />}
+                          {checked && habits.notes?.[dateStr]?.[colIdx] && (
+                            <span className="note-indicator"></span>
+                          )}
                         </button>
+                        {checked && habits.notes?.[dateStr]?.[colIdx] && (
+                          <div className="habit-note-tooltip">
+                            {habits.notes[dateStr][colIdx]}
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -329,6 +381,16 @@ export default function HabitsPage({ mode = 'main' }: HabitsPageProps) {
               <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <input className="input" value={column} maxLength={30}
                   onChange={e => user && renameCoreHabitColumn(i, e.target.value)} />
+                <button
+                  className={noteColumns.includes(i) ? 'btn-primary' : 'btn-secondary'}
+                  onClick={() => user && toggleNote(i)}
+                  title={noteColumns.includes(i) ? 'Notes enabled' : 'Enable notes'}
+                  style={{ padding: '0.5rem', flexShrink: 0 }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                </button>
                 <button className="btn-secondary" onClick={() => user && toggleCoreColumnVisibility(i)}>
                   {hiddenColumns.includes(i) ? 'Show' : 'Hide'}
                 </button>
