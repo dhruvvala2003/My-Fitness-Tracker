@@ -226,10 +226,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const newOverall = data.habits.overallColumns
       .filter(i => i !== idx)
       .map(i => (i > idx ? i - 1 : i));
+    const newNoteCols = data.habits.noteColumns
+      .filter(i => i !== idx)
+      .map(i => (i > idx ? i - 1 : i));
 
     setData(prev => {
       // Rebuild checks with shifted indices
       const newChecks: Record<string, Record<string, boolean>> = {};
+      const newNotes: Record<string, Record<string, string>> = {};
       for (const [date, dayChecks] of Object.entries(prev.habits.checks)) {
         const updated: Record<string, boolean> = {};
         for (const [ci, val] of Object.entries(dayChecks)) {
@@ -239,7 +243,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
         newChecks[date] = updated;
       }
-      return { ...prev, habits: { columns: newColumns, descriptions: newDescriptions, hiddenColumns: newHidden, overallColumns: newOverall, checks: newChecks } };
+      for (const [date, dayNotes] of Object.entries(prev.habits.notes)) {
+        const updated: Record<string, string> = {};
+        for (const [ci, val] of Object.entries(dayNotes)) {
+          const n = Number(ci);
+          if (n < idx) updated[ci] = val;
+          else if (n > idx) updated[String(n - 1)] = val;
+        }
+        newNotes[date] = updated;
+      }
+      return { ...prev, habits: { columns: newColumns, descriptions: newDescriptions, hiddenColumns: newHidden, overallColumns: newOverall, noteColumns: newNoteCols, checks: newChecks, notes: newNotes } };
     });
 
     // 1. Delete the column's check rows
@@ -256,7 +269,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       );
     }
 
-    await upsertHabitsConfig(newColumns, newHidden, newOverall, newDescriptions);
+    await upsertHabitsConfig(newColumns, newHidden, newOverall, newDescriptions, newNoteCols);
   }
 
   async function renameHabitColumn(idx: number, name: string) {
@@ -347,8 +360,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const newDescriptions = data.coreHabits.descriptions.filter((_, i) => i !== idx);
     const newHidden = data.coreHabits.hiddenColumns.filter(i => i !== idx).map(i => i > idx ? i - 1 : i);
     const newOverall = data.coreHabits.overallColumns.filter(i => i !== idx).map(i => i > idx ? i - 1 : i);
+    const newNoteCols = data.coreHabits.noteColumns.filter(i => i !== idx).map(i => i > idx ? i - 1 : i);
     setData(prev => {
       const newChecks: Record<string, Record<string, boolean>> = {};
+      const newNotes: Record<string, Record<string, string>> = {};
       for (const [date, dayChecks] of Object.entries(prev.coreHabits.checks)) {
         const updated: Record<string, boolean> = {};
         for (const [ci, value] of Object.entries(dayChecks)) {
@@ -358,7 +373,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
         newChecks[date] = updated;
       }
-      return { ...prev, coreHabits: { columns: newColumns, descriptions: newDescriptions, hiddenColumns: newHidden, overallColumns: newOverall, checks: newChecks } };
+      for (const [date, dayNotes] of Object.entries(prev.coreHabits.notes)) {
+        const updated: Record<string, string> = {};
+        for (const [ci, value] of Object.entries(dayNotes)) {
+          const columnIndex = Number(ci);
+          if (columnIndex < idx) updated[ci] = value;
+          else if (columnIndex > idx) updated[String(columnIndex - 1)] = value;
+        }
+        newNotes[date] = updated;
+      }
+      return { ...prev, coreHabits: { columns: newColumns, descriptions: newDescriptions, hiddenColumns: newHidden, overallColumns: newOverall, noteColumns: newNoteCols, checks: newChecks, notes: newNotes } };
     });
     await supabase.from('core_habit_checks').delete().eq('user_id', uid).eq('col_idx', idx);
     const { data: affected } = await supabase.from('core_habit_checks').select('date, col_idx').eq('user_id', uid).gt('col_idx', idx);
@@ -366,7 +390,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       await supabase.from('core_habit_checks').delete().eq('user_id', uid).gt('col_idx', idx);
       await supabase.from('core_habit_checks').insert(affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1 })));
     }
-    await upsertCoreHabitsConfig(newColumns, newHidden, newOverall, newDescriptions);
+    await upsertCoreHabitsConfig(newColumns, newHidden, newOverall, newDescriptions, newNoteCols);
   }
 
   async function renameCoreHabitColumn(idx: number, name: string) {
