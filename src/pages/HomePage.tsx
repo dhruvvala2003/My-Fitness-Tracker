@@ -152,7 +152,7 @@ export default function HomePage() {
       const key = 'popup_seen_' + btoa(data.popupMessage.slice(0, 50));
       if (!sessionStorage.getItem(key)) {
         // Small delay for dramatic entrance
-        const timer = setTimeout(() => setShowPopup(true), 600);
+        const timer = setTimeout(() => setShowPopup(true), 100);
         return () => clearTimeout(timer);
       }
     }
