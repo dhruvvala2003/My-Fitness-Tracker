@@ -45,6 +45,7 @@ interface DataContextType {
   // Workouts
   addWorkout: (session: WorkoutSession) => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
+  updatePopupMessage: (message: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType>({} as DataContextType);
@@ -59,7 +60,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     const uid = user.id;
 
-    const [configResult, checksResult, coreConfigResult, coreChecksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult] = await Promise.all([
+    const [configResult, checksResult, coreConfigResult, coreChecksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult, settingsResult] = await Promise.all([
       supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
       supabase.from('habit_checks').select('*').eq('user_id', uid),
       supabase.from('core_habits_config').select('*').eq('user_id', uid).maybeSingle(),
@@ -69,6 +70,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
       supabase.from('weight_entries').select('*').eq('user_id', uid).order('date'),
       supabase.from('workout_sessions').select('*').eq('user_id', uid).order('started_at', { ascending: false }),
+      supabase.from('user_settings').select('*').eq('user_id', uid).maybeSingle(),
     ]);
 
     // Build checks: only stored rows are true
@@ -163,6 +165,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       insights,
       weights,
       workouts,
+      popupMessage: settingsResult.data?.popup_message ?? '',
     });
     setLoading(false);
   }, [user]);
@@ -593,6 +596,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('workout_sessions').delete().eq('user_id', user!.id).eq('id', id);
   }
 
+  async function updatePopupMessage(message: string) {
+    setData(prev => ({ ...prev, popupMessage: message }));
+    await supabase.from('user_settings').upsert({
+      user_id: user!.id,
+      popup_message: message,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   return (
     <DataContext.Provider value={{
       data, loading,
@@ -603,6 +615,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addInsight, deleteInsight, updateInsightRating, updateInsight,
       logWeight, deleteWeight,
       addWorkout, deleteWorkout,
+      updatePopupMessage,
     }}>
       {children}
     </DataContext.Provider>

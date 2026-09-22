@@ -70,6 +70,7 @@ export interface AppData {
   insights: InsightEntry[];
   weights: WeightEntry[];
   workouts: WorkoutSession[];
+  popupMessage: string;
 }
 
 export const DEFAULT_DATA: AppData = {
@@ -96,4 +97,5 @@ export const DEFAULT_DATA: AppData = {
   insights: [],
   weights: [],
   workouts: [],
+  popupMessage: '',
 };

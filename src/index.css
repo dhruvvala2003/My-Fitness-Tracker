@@ -1452,3 +1452,206 @@ td:hover .habit-note-tooltip {
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
+
+/* ═══════════════ HOMEPAGE POPUP MESSAGE ═══════════════ */
+
+@keyframes popupOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes popupSlideUp {
+  0%   { opacity: 0; transform: translateY(60px) scale(0.88); }
+  50%  { opacity: 1; transform: translateY(-8px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes popupGlow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%      { opacity: 0.8; transform: scale(1.15); }
+}
+
+@keyframes popupTextReveal {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popupShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes popupOrbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(12px, -18px) scale(1.1); }
+  66%      { transform: translate(-8px, 10px) scale(0.95); }
+}
+
+.popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: popupOverlayIn 400ms ease forwards;
+}
+
+.popup-container {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  background: linear-gradient(145deg, rgba(26, 30, 41, 0.95), rgba(18, 21, 29, 0.98));
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 24px;
+  padding: 2.25rem 2rem 1.75rem;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 4px 6px rgba(0, 0, 0, 0.3),
+    0 24px 80px -12px rgba(0, 0, 0, 0.6),
+    0 0 60px -10px rgba(52, 211, 153, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  animation: popupSlideUp 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* Decorative glow orbs inside the popup */
+.popup-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(40px);
+  animation: popupOrbFloat 6s ease-in-out infinite;
+}
+
+.popup-orb-1 {
+  width: 120px; height: 120px;
+  background: rgba(52, 211, 153, 0.15);
+  top: -30px; right: -20px;
+  animation-delay: 0s;
+}
+
+.popup-orb-2 {
+  width: 80px; height: 80px;
+  background: rgba(167, 139, 250, 0.12);
+  bottom: -20px; left: -10px;
+  animation-delay: -2s;
+}
+
+.popup-orb-3 {
+  width: 60px; height: 60px;
+  background: rgba(56, 189, 248, 0.1);
+  top: 50%; left: 60%;
+  animation-delay: -4s;
+}
+
+.popup-close {
+  position: absolute;
+  top: 1rem; right: 1rem;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: all 200ms ease;
+  z-index: 2;
+}
+
+.popup-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  transform: rotate(90deg);
+}
+
+.popup-icon-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+  position: relative;
+  z-index: 1;
+}
+
+.popup-icon-glow {
+  width: 64px; height: 64px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(167, 139, 250, 0.1));
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  display: flex; align-items: center; justify-content: center;
+  animation: popupGlow 3s ease-in-out infinite;
+  box-shadow: 0 0 30px rgba(52, 211, 153, 0.1);
+}
+
+.popup-body {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  animation: popupTextReveal 500ms ease 300ms both;
+}
+
+.popup-text {
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 1.5rem;
+  padding: 0 0.5rem;
+}
+
+.popup-dismiss-btn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--accent-primary), #2dd4a0);
+  color: #06251a;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-family: var(--font-sans);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  transition: filter 200ms ease, transform 150ms ease;
+  animation: popupTextReveal 500ms ease 500ms both;
+}
+
+.popup-dismiss-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+  background-size: 200% 100%;
+  animation: popupShimmer 3s ease-in-out infinite;
+}
+
+.popup-dismiss-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.popup-dismiss-btn:active {
+  transform: scale(0.98);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .popup-container {
+    padding: 1.75rem 1.25rem 1.5rem;
+    border-radius: 20px;
+  }
+  
+  .popup-text {
+    font-size: 1rem;
+  }
+}

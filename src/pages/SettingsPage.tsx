@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn, KeyRound } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -7,12 +7,15 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsPage() {
-  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleNoteColumn } = useAppData();
+  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleNoteColumn, updatePopupMessage } = useAppData();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const [newCol, setNewCol] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [popupMsg, setPopupMsg] = useState(data.popupMessage ?? '');
+
+  useEffect(() => { setPopupMsg(data.popupMessage ?? ''); }, [data.popupMessage]);
 
   // Change password state
   const [showChangePw, setShowChangePw] = useState(false);
@@ -173,6 +176,53 @@ export default function SettingsPage() {
         {columns.length >= 4 && (
           <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Maximum 4 columns reached.</p>
         )}
+      </div>
+
+      {/* ── Homepage Popup Message ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <span style={{ fontSize: '1.25rem' }}>📢</span>
+          <p style={{ fontWeight: 600 }}>Homepage Popup Message</p>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          Set a message that will appear as a beautiful animated popup when you open the homepage.
+          Leave empty to disable the popup.
+        </p>
+        <textarea
+          className="input"
+          value={popupMsg}
+          onChange={e => setPopupMsg(e.target.value)}
+          placeholder="Enter your motivational message, reminder, or announcement here..."
+          rows={5}
+          style={{
+            resize: 'vertical',
+            minHeight: '120px',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '0.9rem',
+            lineHeight: 1.6,
+          }}
+        />
+        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
+          <button
+            className="btn-primary"
+            onClick={() => requireAuth(() => updatePopupMessage(popupMsg))}
+            style={{ flexShrink: 0 }}
+          >
+            💾 Save Message
+          </button>
+          {popupMsg && (
+            <button
+              className="btn-danger"
+              onClick={() => requireAuth(() => { setPopupMsg(''); updatePopupMessage(''); })}
+              style={{ flexShrink: 0 }}
+            >
+              Clear
+            </button>
+          )}
+          {data.popupMessage === popupMsg && popupMsg && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary)' }}>✓ Saved</span>
+          )}
+        </div>
       </div>
 
       {/* ── Account ── */}

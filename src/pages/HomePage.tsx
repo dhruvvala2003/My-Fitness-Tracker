@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, X } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { TiltCard, CountUp } from '../components/effects';
@@ -144,6 +144,28 @@ export default function HomePage() {
   const [challengeDone, setChallengeDone] = useState(false);
   const [imgLoaded, setImgLoaded] = useState<boolean[]>(() => SLIDES.map(() => false));
 
+  // Popup message state
+  const [showPopup, setShowPopup] = useState(false);
+
+  useEffect(() => {
+    if (data.popupMessage && data.popupMessage.trim()) {
+      const key = 'popup_seen_' + btoa(data.popupMessage.slice(0, 50));
+      if (!sessionStorage.getItem(key)) {
+        // Small delay for dramatic entrance
+        const timer = setTimeout(() => setShowPopup(true), 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [data.popupMessage]);
+
+  function dismissPopup() {
+    setShowPopup(false);
+    if (data.popupMessage) {
+      const key = 'popup_seen_' + btoa(data.popupMessage.slice(0, 50));
+      sessionStorage.setItem(key, '1');
+    }
+  }
+
   /* Auto-advance every 5 s */
   useEffect(() => {
     const id = setInterval(() => setSlide(s => (s + 1) % SLIDES.length), 5000);
@@ -228,6 +250,36 @@ export default function HomePage() {
 
   return (
     <div className="home-page">
+
+      {/* ═══ POPUP MESSAGE ═══ */}
+      {showPopup && data.popupMessage && (
+        <div className="popup-overlay" onClick={dismissPopup}>
+          <div className="popup-container" onClick={e => e.stopPropagation()}>
+            {/* Decorative glow orbs */}
+            <div className="popup-orb popup-orb-1" />
+            <div className="popup-orb popup-orb-2" />
+            <div className="popup-orb popup-orb-3" />
+            
+            {/* Close button */}
+            <button className="popup-close" onClick={dismissPopup}>
+              <X size={20} />
+            </button>
+            
+            {/* Content */}
+            <div className="popup-icon-row">
+              <div className="popup-icon-glow">
+                <span style={{ fontSize: '2rem' }}>💬</span>
+              </div>
+            </div>
+            <div className="popup-body">
+              <p className="popup-text">{data.popupMessage}</p>
+            </div>
+            <button className="popup-dismiss-btn" onClick={dismissPopup}>
+              Got it ✨
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ HERO — layered 3D slider ═══ */}
       <section ref={heroRef} className="hero-section" onMouseMove={onHeroMove} onMouseLeave={onHeroLeave}>
