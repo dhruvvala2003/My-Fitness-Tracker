@@ -1,6 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Plus, Search, X, Star, BookOpen, AlertTriangle, ThumbsUp, ThumbsDown, Trash2, SlidersHorizontal, Pencil } from 'lucide-react';
+import {
+  Plus, Search, X, Star, BookOpen, AlertTriangle, ThumbsUp, ThumbsDown, Trash2,
+  SlidersHorizontal, Pencil, Eye, Calendar,
+} from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
@@ -44,6 +47,12 @@ const TABS: { val: Tab; label: string }[] = [
   { val: 'good',     label: 'Good Things' },
   { val: 'bad',      label: 'Bad Things' },
 ];
+
+function formatDate(dateStr: string) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
 
 function StarRating({
   value,
@@ -92,6 +101,19 @@ export default function InsightsPage() {
   const [formRating, setFormRating] = useState(3);
   const [formDate, setFormDate] = useState(today());
 
+  // Which entry is open in the full-view dialog / being edited inline
+  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const viewing = viewingId ? insights.find(e => e.id === viewingId) ?? null : null;
+
+  // Close the viewer with Escape
+  useEffect(() => {
+    if (!viewingId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewingId(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewingId]);
+
   const filtered = useMemo(() => {
     return insights.filter(e => {
       if (tab !== 'all' && e.type !== tab) return false;
@@ -101,6 +123,11 @@ export default function InsightsPage() {
       return true;
     });
   }, [insights, tab, filterRating, filterDate, search]);
+
+  function requireUser(action: () => void) {
+    if (!user) { setShowLoginPrompt(true); return; }
+    action();
+  }
 
   function handleAddClick() {
     if (!user) { setShowLoginPrompt(true); return; }
@@ -142,6 +169,8 @@ export default function InsightsPage() {
     );
   }
 
+  const viewMeta = viewing ? (TYPE_META[viewing.type as InsightType] ?? TYPE_META.learning) : null;
+
   return (
     <div className="page">
       {showLoginPrompt && (
@@ -149,6 +178,46 @@ export default function InsightsPage() {
           message="You need to be signed in to add or manage insights. Sign in to start journaling your daily reflections!"
           onClose={() => setShowLoginPrompt(false)}
         />
+      )}
+
+      {/* ── Full-view dialog ── */}
+      {viewing && viewMeta && (
+        <div className="modal-backdrop" onClick={() => setViewingId(null)}>
+          <div className={`modal-card insight-view ${viewMeta.colorClass}`} style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="row-between" style={{ marginBottom: '0.875rem', gap: '0.75rem' }}>
+              <div className="row" style={{ gap: '0.6rem', minWidth: 0 }}>
+                <div className={`insight-type-icon ${viewMeta.colorClass}`}>{viewMeta.icon}</div>
+                <div style={{ minWidth: 0 }}>
+                  <span className={`insight-badge ${viewMeta.colorClass}`}>{viewMeta.label}</span>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+                    <Calendar size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} />
+                    {formatDate(viewing.date)}
+                  </div>
+                </div>
+              </div>
+              <button className="icon-btn" onClick={() => setViewingId(null)} title="Close"><X size={17} /></button>
+            </div>
+
+            <p className="insight-view-text">{viewing.text}</p>
+
+            <div className="row-between" style={{ marginTop: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div className="row" style={{ gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Rating</span>
+                <StarRating value={viewing.rating} size={18} onChange={r => requireUser(() => updateInsightRating(viewing.id, r))} />
+              </div>
+              <div className="row" style={{ gap: '0.5rem' }}>
+                <button className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => requireUser(() => { setEditingId(viewing.id); setViewingId(null); })}>
+                  <Pencil size={13} /> Edit
+                </button>
+                <button className="btn-danger" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  onClick={() => requireUser(() => { if (confirm('Delete this insight?')) { deleteInsight(viewing.id); setViewingId(null); } })}>
+                  <Trash2 size={13} /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Header */}
@@ -183,7 +252,7 @@ export default function InsightsPage() {
             placeholder={TYPE_META[formType].placeholder}
             value={formText}
             onChange={e => setFormText(e.target.value)}
-            rows={3}
+            rows={4}
             autoFocus
           />
 
@@ -309,18 +378,13 @@ export default function InsightsPage() {
             <InsightCard
               key={entry.id}
               entry={entry}
-              onDelete={() => {
-                if (!user) { setShowLoginPrompt(true); return; }
-                deleteInsight(entry.id);
-              }}
-              onRatingChange={r => {
-                if (!user) { setShowLoginPrompt(true); return; }
-                updateInsightRating(entry.id, r);
-              }}
-              onUpdate={updates => {
-                if (!user) { setShowLoginPrompt(true); return; }
-                updateInsight(entry.id, updates);
-              }}
+              editing={editingId === entry.id}
+              onStartEdit={() => requireUser(() => setEditingId(entry.id))}
+              onCancelEdit={() => setEditingId(null)}
+              onView={() => setViewingId(entry.id)}
+              onDelete={() => requireUser(() => deleteInsight(entry.id))}
+              onRatingChange={r => requireUser(() => updateInsightRating(entry.id, r))}
+              onUpdate={updates => requireUser(() => { updateInsight(entry.id, updates); setEditingId(null); })}
             />
           ))
         )}
@@ -331,36 +395,40 @@ export default function InsightsPage() {
 
 function InsightCard({
   entry,
+  editing,
+  onStartEdit,
+  onCancelEdit,
+  onView,
   onDelete,
   onRatingChange,
   onUpdate,
 }: {
   entry: InsightEntry;
+  editing: boolean;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onView: () => void;
   onDelete: () => void;
   onRatingChange: (r: number) => void;
   onUpdate: (updates: { type?: InsightType; text?: string; date?: string }) => void;
 }) {
   const meta = TYPE_META[entry.type as InsightType] ?? TYPE_META.learning;
-  const [editing, setEditing] = useState(false);
   const [editType, setEditType] = useState<InsightType>(entry.type as InsightType);
   const [editText, setEditText] = useState(entry.text);
   const [editDate, setEditDate] = useState(entry.date);
 
-  const dateLabel = new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
+  const isLong = entry.text.length > 160 || entry.text.includes('\n');
 
   function handleSave() {
     if (!editText.trim()) return;
     onUpdate({ type: editType, text: editText.trim(), date: editDate });
-    setEditing(false);
   }
 
   function handleCancelEdit() {
     setEditType(entry.type as InsightType);
     setEditText(entry.text);
     setEditDate(entry.date);
-    setEditing(false);
+    onCancelEdit();
   }
 
   if (editing) {
@@ -384,7 +452,7 @@ function InsightCard({
           className="insights-textarea"
           value={editText}
           onChange={e => setEditText(e.target.value)}
-          rows={3}
+          rows={5}
           autoFocus
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
@@ -415,17 +483,25 @@ function InsightCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem', flexWrap: 'wrap' }}>
             <span className={`insight-badge ${meta.colorClass}`}>{meta.label}</span>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{dateLabel}</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{formatDate(entry.date)}</span>
           </div>
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.55, margin: 0, wordBreak: 'break-word' }}>
+          <p className="insight-text" onClick={onView} title="Click to view the full entry">
             {entry.text}
           </p>
+          {isLong && (
+            <button className="insight-more" onClick={onView}>
+              <Eye size={12} /> View full entry
+            </button>
+          )}
           <div style={{ marginTop: '0.625rem' }}>
             <StarRating value={entry.rating} onChange={onRatingChange} size={16} />
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.25rem', flexShrink: 0 }}>
-          <button className="insight-delete-btn" onClick={() => setEditing(true)} title="Edit">
+          <button className="insight-delete-btn" onClick={onView} title="View">
+            <Eye size={14} />
+          </button>
+          <button className="insight-delete-btn" onClick={onStartEdit} title="Edit">
             <Pencil size={14} />
           </button>
           <button className="insight-delete-btn" onClick={onDelete} title="Delete">
