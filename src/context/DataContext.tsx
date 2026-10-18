@@ -1,8 +1,8 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
-import { DEFAULT_DATA } from '../types';
-import type { AppData, CalorieEntry, InsightEntry, StreakData, WeightEntry, WorkoutSession } from '../types';
+import { DEFAULT_DATA, DEFAULT_SETTINGS } from '../types';
+import type { AppData, CalorieEntry, InsightEntry, StreakData, UserSettings, WeightEntry, WorkoutSession } from '../types';
 
 interface DataContextType {
   data: AppData;
@@ -45,132 +45,192 @@ interface DataContextType {
   // Workouts
   addWorkout: (session: WorkoutSession) => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
+  // Water
+  setWater: (date: string, glasses: number) => Promise<void>;
+  // Settings / profile
+  updateSettings: (patch: Partial<UserSettings>) => Promise<void>;
   updatePopupMessage: (message: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType>({} as DataContextType);
 
+/* ── Row ↔ model mapping ────────────────────────────────────────────────── */
+
+function rowToSettings(row: Record<string, unknown> | null | undefined): UserSettings {
+  if (!row) return DEFAULT_SETTINGS;
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+  return {
+    popupMessage: (row.popup_message as string) ?? '',
+    heightCm: num(row.height_cm),
+    birthYear: num(row.birth_year),
+    sex: (row.sex as UserSettings['sex']) ?? null,
+    activityLevel: (row.activity_level as UserSettings['activityLevel']) ?? 'moderate',
+    goal: (row.goal as UserSettings['goal']) ?? 'maintain',
+    targetWeightKg: num(row.target_weight_kg),
+    calorieTargetOverride: num(row.calorie_target_override),
+    waterGoal: Number(row.water_goal ?? 8),
+    restSeconds: Number(row.rest_seconds ?? 90),
+  };
+}
+
+function settingsToRow(userId: string, s: UserSettings) {
+  return {
+    user_id: userId,
+    popup_message: s.popupMessage,
+    height_cm: s.heightCm,
+    birth_year: s.birthYear,
+    sex: s.sex,
+    activity_level: s.activityLevel,
+    goal: s.goal,
+    target_weight_kg: s.targetWeightKg,
+    calorie_target_override: s.calorieTargetOverride,
+    water_goal: s.waterGoal,
+    rest_seconds: s.restSeconds,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+/** Load everything for one user in a single round of parallel queries. */
+async function fetchAll(uid: string): Promise<AppData> {
+  const [
+    configResult, checksResult, coreConfigResult, coreChecksResult, streaksResult,
+    caloriesResult, insightsResult, weightsResult, workoutsResult, settingsResult, waterResult,
+  ] = await Promise.all([
+    supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
+    supabase.from('habit_checks').select('*').eq('user_id', uid),
+    supabase.from('core_habits_config').select('*').eq('user_id', uid).maybeSingle(),
+    supabase.from('core_habit_checks').select('*').eq('user_id', uid),
+    supabase.from('streaks').select('*').eq('user_id', uid).order('created_at'),
+    supabase.from('calorie_entries').select('*').eq('user_id', uid).order('time'),
+    supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
+    supabase.from('weight_entries').select('*').eq('user_id', uid).order('date'),
+    supabase.from('workout_sessions').select('*').eq('user_id', uid).order('started_at', { ascending: false }),
+    supabase.from('user_settings').select('*').eq('user_id', uid).maybeSingle(),
+    supabase.from('water_entries').select('date, glasses').eq('user_id', uid),
+  ]);
+
+  // Build checks: only stored rows are true
+  const checks: Record<string, Record<string, boolean>> = {};
+  const notes: Record<string, Record<string, string>> = {};
+  for (const row of (checksResult.data ?? [])) {
+    if (!checks[row.date]) checks[row.date] = {};
+    if (!notes[row.date]) notes[row.date] = {};
+    checks[row.date][String(row.col_idx)] = true;
+    if (row.note) notes[row.date][String(row.col_idx)] = row.note;
+  }
+
+  const coreChecks: Record<string, Record<string, boolean>> = {};
+  const coreNotes: Record<string, Record<string, string>> = {};
+  for (const row of (coreChecksResult.data ?? [])) {
+    if (!coreChecks[row.date]) coreChecks[row.date] = {};
+    if (!coreNotes[row.date]) coreNotes[row.date] = {};
+    coreChecks[row.date][String(row.col_idx)] = true;
+    if (row.note) coreNotes[row.date][String(row.col_idx)] = row.note;
+  }
+
+  // Build calorie log grouped by date
+  const calorieLog: Record<string, CalorieEntry[]> = {};
+  for (const row of (caloriesResult.data ?? [])) {
+    if (!calorieLog[row.date]) calorieLog[row.date] = [];
+    calorieLog[row.date].push({ id: row.id, name: row.name, amount: row.amount, calories: row.calories, time: row.time });
+  }
+
+  const streaks: StreakData[] = (streaksResult.data ?? []).map(row => ({
+    id: row.id,
+    name: row.name,
+    startDate: row.start_date,
+    breakDates: row.break_dates ?? [],
+  }));
+
+  const config = configResult.data;
+  const configColumns: string[] = config?.columns ?? [];
+  const configuredOverall: number[] = config?.overall_columns ?? [];
+  const configNoteCols: number[] = config?.note_columns ?? [];
+  const configDescriptions: string[] = Array.isArray(config?.descriptions) ? config.descriptions : [];
+  const coreConfig = coreConfigResult.data;
+  const coreColumns: string[] = coreConfig?.columns ?? [];
+  const coreOverall: number[] = coreConfig?.overall_columns ?? [];
+  const coreNoteCols: number[] = coreConfig?.note_columns ?? [];
+  const coreDescriptions: string[] = Array.isArray(coreConfig?.descriptions) ? coreConfig.descriptions : [];
+
+  const weights: WeightEntry[] = (weightsResult.data ?? []).map(row => ({
+    id: row.id,
+    date: row.date,
+    weightKg: Number(row.weight_kg),
+    note: row.note ?? undefined,
+  }));
+
+  const workouts: WorkoutSession[] = (workoutsResult.data ?? []).map(row => ({
+    id: row.id,
+    date: row.date,
+    startedAt: row.started_at,
+    exercises: row.exercises ?? [],
+    totalCalories: Number(row.total_calories ?? 0),
+  }));
+
+  const insights: InsightEntry[] = (insightsResult.data ?? []).map(row => ({
+    id: row.id,
+    type: row.type as 'learning' | 'mistake' | 'good' | 'bad',
+    text: row.text,
+    rating: row.rating,
+    date: row.date,
+    createdAt: row.created_at,
+  }));
+
+  const water: Record<string, number> = {};
+  for (const row of (waterResult.data ?? [])) water[row.date] = Number(row.glasses);
+
+  return {
+    habits: {
+      columns: configColumns,
+      descriptions: configColumns.map((_, i) => configDescriptions[i] ?? ''),
+      hiddenColumns: config?.hidden_columns ?? [],
+      overallColumns: configuredOverall.length > 0 ? configuredOverall : configColumns.map((_, i) => i),
+      noteColumns: configNoteCols,
+      checks,
+      notes,
+    },
+    coreHabits: {
+      columns: coreColumns,
+      descriptions: coreColumns.map((_, i) => coreDescriptions[i] ?? ''),
+      hiddenColumns: coreConfig?.hidden_columns ?? [],
+      overallColumns: coreOverall.length > 0 ? coreOverall : coreColumns.map((_, i) => i),
+      noteColumns: coreNoteCols,
+      checks: coreChecks,
+      notes: coreNotes,
+    },
+    streaks,
+    calorieLog,
+    insights,
+    weights,
+    workouts,
+    water,
+    settings: rowToSettings(settingsResult.data as Record<string, unknown> | null),
+  };
+}
+
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const uid = user?.id ?? null;
   const [data, setData] = useState<AppData>(DEFAULT_DATA);
-  const [loading, setLoading] = useState(true);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
 
-  const loadAllData = useCallback(async () => {
-    if (!user) { setData(DEFAULT_DATA); setLoading(false); return; }
-    setLoading(true);
-    const uid = user.id;
+  useEffect(() => {
+    if (!uid) return;
+    let active = true;
+    fetchAll(uid)
+      .then(d => { if (!active) return; setData(d); setLoadedFor(uid); })
+      .catch(err => {
+        console.error('Failed to load data:', err);
+        if (active) setLoadedFor(uid);
+      });
+    return () => { active = false; };
+  }, [uid]);
 
-    const [configResult, checksResult, coreConfigResult, coreChecksResult, streaksResult, caloriesResult, insightsResult, weightsResult, workoutsResult, settingsResult] = await Promise.all([
-      supabase.from('habits_config').select('*').eq('user_id', uid).maybeSingle(),
-      supabase.from('habit_checks').select('*').eq('user_id', uid),
-      supabase.from('core_habits_config').select('*').eq('user_id', uid).maybeSingle(),
-      supabase.from('core_habit_checks').select('*').eq('user_id', uid),
-      supabase.from('streaks').select('*').eq('user_id', uid).order('created_at'),
-      supabase.from('calorie_entries').select('*').eq('user_id', uid).order('time'),
-      supabase.from('daily_insights').select('*').eq('user_id', uid).order('created_at', { ascending: false }),
-      supabase.from('weight_entries').select('*').eq('user_id', uid).order('date'),
-      supabase.from('workout_sessions').select('*').eq('user_id', uid).order('started_at', { ascending: false }),
-      supabase.from('user_settings').select('*').eq('user_id', uid).maybeSingle(),
-    ]);
-
-    // Build checks: only stored rows are true
-    const checks: Record<string, Record<string, boolean>> = {};
-    const notes: Record<string, Record<string, string>> = {};
-    for (const row of (checksResult.data ?? [])) {
-      if (!checks[row.date]) checks[row.date] = {};
-      if (!notes[row.date]) notes[row.date] = {};
-      checks[row.date][String(row.col_idx)] = true;
-      if (row.note) notes[row.date][String(row.col_idx)] = row.note;
-    }
-
-    const coreChecks: Record<string, Record<string, boolean>> = {};
-    const coreNotes: Record<string, Record<string, string>> = {};
-    for (const row of (coreChecksResult.data ?? [])) {
-      if (!coreChecks[row.date]) coreChecks[row.date] = {};
-      if (!coreNotes[row.date]) coreNotes[row.date] = {};
-      coreChecks[row.date][String(row.col_idx)] = true;
-      if (row.note) coreNotes[row.date][String(row.col_idx)] = row.note;
-    }
-
-    // Build calorie log grouped by date
-    const calorieLog: Record<string, CalorieEntry[]> = {};
-    for (const row of (caloriesResult.data ?? [])) {
-      if (!calorieLog[row.date]) calorieLog[row.date] = [];
-      calorieLog[row.date].push({ id: row.id, name: row.name, amount: row.amount, calories: row.calories, time: row.time });
-    }
-
-    const streaks: StreakData[] = (streaksResult.data ?? []).map(row => ({
-      id: row.id,
-      name: row.name,
-      startDate: row.start_date,
-      breakDates: row.break_dates ?? [],
-    }));
-
-    const config = configResult.data;
-    const configColumns: string[] = config?.columns ?? [];
-    const configuredOverall: number[] = config?.overall_columns ?? [];
-    const configNoteCols: number[] = config?.note_columns ?? [];
-    const configDescriptions: string[] = Array.isArray(config?.descriptions) ? config.descriptions : [];
-    const coreConfig = coreConfigResult.data;
-    const coreColumns: string[] = coreConfig?.columns ?? [];
-    const coreOverall: number[] = coreConfig?.overall_columns ?? [];
-    const coreNoteCols: number[] = coreConfig?.note_columns ?? [];
-    const coreDescriptions: string[] = Array.isArray(coreConfig?.descriptions) ? coreConfig.descriptions : [];
-
-    const weights: WeightEntry[] = (weightsResult.data ?? []).map(row => ({
-      id: row.id,
-      date: row.date,
-      weightKg: Number(row.weight_kg),
-      note: row.note ?? undefined,
-    }));
-
-    const workouts: WorkoutSession[] = (workoutsResult.data ?? []).map(row => ({
-      id: row.id,
-      date: row.date,
-      startedAt: row.started_at,
-      exercises: row.exercises ?? [],
-      totalCalories: Number(row.total_calories ?? 0),
-    }));
-
-    const insights: InsightEntry[] = (insightsResult.data ?? []).map(row => ({
-      id: row.id,
-      type: row.type as 'learning' | 'mistake' | 'good' | 'bad',
-      text: row.text,
-      rating: row.rating,
-      date: row.date,
-      createdAt: row.created_at,
-    }));
-
-    setData({
-      habits: {
-        columns: configColumns,
-        descriptions: configColumns.map((_, i) => configDescriptions[i] ?? ''),
-        hiddenColumns: config?.hidden_columns ?? [],
-        overallColumns: configuredOverall.length > 0 ? configuredOverall : configColumns.map((_, i) => i),
-        noteColumns: configNoteCols,
-        checks,
-        notes,
-      },
-      coreHabits: {
-        columns: coreColumns,
-        descriptions: coreColumns.map((_, i) => coreDescriptions[i] ?? ''),
-        hiddenColumns: coreConfig?.hidden_columns ?? [],
-        overallColumns: coreOverall.length > 0 ? coreOverall : coreColumns.map((_, i) => i),
-        noteColumns: coreNoteCols,
-        checks: coreChecks,
-        notes: coreNotes,
-      },
-      streaks,
-      calorieLog,
-      insights,
-      weights,
-      workouts,
-      popupMessage: settingsResult.data?.popup_message ?? '',
-    });
-    setLoading(false);
-  }, [user]);
-
-  useEffect(() => { loadAllData(); }, [loadAllData]);
+  const ready = !!uid && loadedFor === uid;
+  const loading = !!uid && !ready;
+  // Signed-out visitors (and a freshly switched account) see empty defaults.
+  const visibleData = ready ? data : DEFAULT_DATA;
 
   // ── Habit helpers ──────────────────────────────────────────────────────────
 
@@ -262,14 +322,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // 1. Delete the column's check rows
     await supabase.from('habit_checks').delete().eq('user_id', uid).eq('col_idx', idx);
 
-    // 2. Shift col_idx > idx down by 1 (fetch → delete → re-insert)
+    // 2. Shift col_idx > idx down by 1 (fetch → delete → re-insert, keeping notes)
     const { data: affected } = await supabase
-      .from('habit_checks').select('date, col_idx').eq('user_id', uid).gt('col_idx', idx);
+      .from('habit_checks').select('date, col_idx, note').eq('user_id', uid).gt('col_idx', idx);
 
     if (affected && affected.length > 0) {
       await supabase.from('habit_checks').delete().eq('user_id', uid).gt('col_idx', idx);
       await supabase.from('habit_checks').insert(
-        affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1 }))
+        affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1, note: row.note ?? null }))
       );
     }
 
@@ -318,11 +378,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       else dayNotes[String(colIdx)] = note;
       return { ...prev, habits: { ...prev.habits, notes: { ...prev.habits.notes, [date]: dayNotes } } };
     });
-    if (!note) {
-      await supabase.from('habit_checks').update({ note: null }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
-    } else {
-      await supabase.from('habit_checks').update({ note }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
-    }
+    await supabase.from('habit_checks').update({ note: note || null }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
   }
 
   async function upsertCoreHabitsConfig(columns: string[], hiddenColumns: number[], overallColumns: number[], descriptions = data.coreHabits.descriptions, noteColumns = data.coreHabits.noteColumns) {
@@ -390,10 +446,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return { ...prev, coreHabits: { columns: newColumns, descriptions: newDescriptions, hiddenColumns: newHidden, overallColumns: newOverall, noteColumns: newNoteCols, checks: newChecks, notes: newNotes } };
     });
     await supabase.from('core_habit_checks').delete().eq('user_id', uid).eq('col_idx', idx);
-    const { data: affected } = await supabase.from('core_habit_checks').select('date, col_idx').eq('user_id', uid).gt('col_idx', idx);
+    const { data: affected } = await supabase.from('core_habit_checks').select('date, col_idx, note').eq('user_id', uid).gt('col_idx', idx);
     if (affected && affected.length > 0) {
       await supabase.from('core_habit_checks').delete().eq('user_id', uid).gt('col_idx', idx);
-      await supabase.from('core_habit_checks').insert(affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1 })));
+      await supabase.from('core_habit_checks').insert(affected.map(row => ({ user_id: uid, date: row.date, col_idx: row.col_idx - 1, note: row.note ?? null })));
     }
     await upsertCoreHabitsConfig(newColumns, newHidden, newOverall, newDescriptions, newNoteCols);
   }
@@ -440,11 +496,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       else dayNotes[String(colIdx)] = note;
       return { ...prev, coreHabits: { ...prev.coreHabits, notes: { ...prev.coreHabits.notes, [date]: dayNotes } } };
     });
-    if (!note) {
-      await supabase.from('core_habit_checks').update({ note: null }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
-    } else {
-      await supabase.from('core_habit_checks').update({ note }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
-    }
+    await supabase.from('core_habit_checks').update({ note: note || null }).eq('user_id', uid).eq('date', date).eq('col_idx', colIdx);
   }
 
   // ── Streak helpers ─────────────────────────────────────────────────────────
@@ -494,7 +546,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   async function logMeal(entry: CalorieEntry, date: string) {
     setData(prev => ({
       ...prev,
-      calorieLog: { ...prev.calorieLog, [date]: [...(prev.calorieLog[date] ?? []), entry] },
+      calorieLog: { ...prev.calorieLog, [date]: [...(prev.calorieLog[date] ?? []), entry].sort((a, b) => a.time.localeCompare(b.time)) },
     }));
     await supabase.from('calorie_entries').insert({
       id: entry.id,
@@ -596,18 +648,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await supabase.from('workout_sessions').delete().eq('user_id', user!.id).eq('id', id);
   }
 
+  // ── Water ──────────────────────────────────────────────────────────────────
+
+  async function setWater(date: string, glasses: number) {
+    const g = Math.max(0, Math.min(50, Math.round(glasses)));
+    setData(prev => ({ ...prev, water: { ...prev.water, [date]: g } }));
+    await supabase.from('water_entries').upsert({
+      user_id: user!.id, date, glasses: g, updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,date' });
+  }
+
+  // ── Settings / profile ─────────────────────────────────────────────────────
+
+  async function updateSettings(patch: Partial<UserSettings>) {
+    const merged: UserSettings = { ...data.settings, ...patch };
+    setData(prev => ({ ...prev, settings: { ...prev.settings, ...patch } }));
+    const { error } = await supabase.from('user_settings').upsert(settingsToRow(user!.id, merged));
+    if (error) {
+      // Most likely cause: supabase-migration-v2.sql has not been run yet.
+      throw new Error(`Could not save settings: ${error.message}`);
+    }
+  }
+
   async function updatePopupMessage(message: string) {
-    setData(prev => ({ ...prev, popupMessage: message }));
-    await supabase.from('user_settings').upsert({
-      user_id: user!.id,
-      popup_message: message,
-      updated_at: new Date().toISOString(),
-    });
+    await updateSettings({ popupMessage: message });
   }
 
   return (
     <DataContext.Provider value={{
-      data, loading,
+      data: visibleData, loading,
       toggleHabitCheck, addHabitColumn, deleteHabitColumn, renameHabitColumn, updateHabitDescription, toggleColumnVisibility, toggleOverallColumn, toggleNoteColumn, updateHabitNote,
       toggleCoreHabitCheck, addCoreHabitColumn, deleteCoreHabitColumn, renameCoreHabitColumn, updateCoreHabitDescription, toggleCoreColumnVisibility, toggleCoreOverallColumn, toggleCoreNoteColumn, updateCoreHabitNote,
       addStreak, deleteStreak, logBreakDate, removeBreakDate,
@@ -615,13 +684,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addInsight, deleteInsight, updateInsightRating, updateInsight,
       logWeight, deleteWeight,
       addWorkout, deleteWorkout,
-      updatePopupMessage,
+      setWater,
+      updateSettings, updatePopupMessage,
     }}>
       {children}
     </DataContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAppData() {
   return useContext(DataContext);
 }

@@ -2,130 +2,19 @@ import { useMemo, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
   X, Clock, Repeat, ZoomIn, Info, Search, Plus, Check, Trash2,
-  Dumbbell, History, Flame, ChevronDown, ChevronUp,
+  Dumbbell, History, Flame, ChevronDown, ChevronUp, RotateCcw, Timer,
 } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
-import { today, formatFullDate } from '../utils/dateHelpers';
+import { today, formatFullDate, getPast7Days } from '../utils/dateHelpers';
+import { cardioCalories, strengthCalories } from '../utils/calories';
+import type { StrengthBreakdown } from '../utils/calories';
+import { EXERCISES, IMG, CATEGORIES, CAT_COLOR, DEFAULT_COLOR } from '../data/exercises';
+import type { Exercise } from '../data/exercises';
 import type { WorkoutExercise, WorkoutSession } from '../types';
 
-// ── Image base URL ──────────────────────────────────────────────────────────
-const IMG = (folder: string) =>
-  `https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/${folder}/0.jpg`;
-
-// ── Category colours (badge/UI colors on the new theme) ─────────────────────
-const CATEGORIES = ['All', 'Chest', 'Back', 'Legs', 'Arms', 'Core', 'Cardio', 'Full Body'];
-
-const CAT_COLOR: Record<string, { text: string; bg: string; border: string }> = {
-  Chest:       { text: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.3)'  },
-  Back:        { text: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  border: 'rgba(56,189,248,0.3)'  },
-  Legs:        { text: '#fbbf24', bg: 'rgba(251,191,36,0.12)',  border: 'rgba(251,191,36,0.3)'  },
-  Arms:        { text: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.3)' },
-  Core:        { text: '#f472b6', bg: 'rgba(244,114,182,0.12)', border: 'rgba(244,114,182,0.3)' },
-  Cardio:      { text: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)' },
-  'Full Body': { text: '#a3e635', bg: 'rgba(163,230,53,0.12)',  border: 'rgba(163,230,53,0.3)'  },
-};
-const DEFAULT_COLOR = CAT_COLOR.Chest;
-
-// ── Exercise data ───────────────────────────────────────────────────────────
-//
-// Calorie model for REPS mode (strength training):
-//   kcal = sets × reps × (bodyFraction × bodyKg + loadKg) × burnCoeff
-//
-//   burnCoeff is derived from mechanical work studies (Robergs et al., ACSM):
-//     compound lifts  ≈ 0.005  (bench, squat, deadlift, rows, pull-ups)
-//     isolation lifts ≈ 0.003  (curls, tricep pushdown)
-//     explosive/full  ≈ 0.006+ (clean & jerk, box jump)
-//
-//   bodyFraction = portion of body weight actually moved against gravity
-//   isWeighted   = show a "load (kg)" input so the barbell/dumbbell weight is counted
-//   durationOnly = exercise is time-based (running, jump rope, plank) — hide reps toggle
-//
-// Calorie model for DURATION mode (cardio):
-//   kcal = MET × bodyKg × (minutes / 60)  — standard exercise-science formula, accurate
-//   for continuous movement (no rest periods), from Compendium of Physical Activities.
-
-interface Exercise {
-  id: string;
-  name: string;
-  category: string;
-  imgFolder: string;
-  met: number;
-  bodyFraction: number;
-  isWeighted: boolean;
-  burnCoeff: number;
-  durationOnly?: boolean;
-}
-
-const EXERCISES: Exercise[] = [
-  // ── Chest ──
-  { id: 'pushups',          name: 'Push-ups',           category: 'Chest',     imgFolder: 'Pushups',                                   met: 3.8,  bodyFraction: 0.64, isWeighted: false, burnCoeff: 0.005 },
-  { id: 'bench-press',      name: 'Bench Press',         category: 'Chest',     imgFolder: 'Barbell_Bench_Press_-_Medium_Grip',         met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'incline-bench',    name: 'Incline Bench Press', category: 'Chest',     imgFolder: 'Barbell_Incline_Bench_Press_-_Medium_Grip', met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'decline-pushup',   name: 'Decline Push-Up',     category: 'Chest',     imgFolder: 'Decline_Push-Up',                          met: 4.0,  bodyFraction: 0.70, isWeighted: false, burnCoeff: 0.005 },
-  { id: 'db-flyes',         name: 'Dumbbell Flyes',      category: 'Chest',     imgFolder: 'Dumbbell_Flyes',                           met: 4.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
-  { id: 'chest-dips',       name: 'Chest Dips',          category: 'Chest',     imgFolder: 'Dips_-_Chest_Version',                     met: 6.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.005 },
-  // ── Back ──
-  { id: 'chin-up',          name: 'Pull-ups',             category: 'Back',      imgFolder: 'Chin-Up',                                  met: 8.0,  bodyFraction: 1.0,  isWeighted: false, burnCoeff: 0.005 },
-  { id: 'deadlift',         name: 'Deadlift',             category: 'Back',      imgFolder: 'Barbell_Deadlift',                         met: 6.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
-  { id: 'bent-row',         name: 'Bent-over Row',        category: 'Back',      imgFolder: 'Bent_Over_Barbell_Row',                    met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'lat-pulldown',     name: 'Lat Pulldown',         category: 'Back',      imgFolder: 'Wide-Grip_Lat_Pulldown',                   met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'rdl',              name: 'Romanian Deadlift',    category: 'Back',      imgFolder: 'Romanian_Deadlift',                        met: 5.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'face-pull',        name: 'Face Pulls',           category: 'Back',      imgFolder: 'Face_Pull',                                met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  // ── Legs ──
-  { id: 'squats',           name: 'Squats',               category: 'Legs',      imgFolder: 'Bodyweight_Squat',                         met: 5.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'lunges',           name: 'Lunges',               category: 'Legs',      imgFolder: 'Barbell_Walking_Lunge',                    met: 4.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.004 },
-  { id: 'leg-press',        name: 'Leg Press',            category: 'Legs',      imgFolder: 'Leg_Press',                                met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
-  { id: 'leg-extension',    name: 'Leg Extension',        category: 'Legs',      imgFolder: 'Leg_Extensions',                           met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'leg-curl',         name: 'Leg Curl',             category: 'Legs',      imgFolder: 'Lying_Leg_Curls',                          met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'calf-raise',       name: 'Calf Raises',          category: 'Legs',      imgFolder: 'Standing_Calf_Raises',                     met: 3.0,  bodyFraction: 1.0,  isWeighted: true,  burnCoeff: 0.002 },
-  { id: 'hip-thrust',       name: 'Hip Thrust',           category: 'Legs',      imgFolder: 'Barbell_Hip_Thrust',                       met: 4.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.005 },
-  { id: 'glute-bridge',     name: 'Glute Bridge',         category: 'Legs',      imgFolder: 'Barbell_Glute_Bridge',                     met: 3.5,  bodyFraction: 0.65, isWeighted: false, burnCoeff: 0.004 },
-  { id: 'sumo-squat',       name: 'Sumo Squat',           category: 'Legs',      imgFolder: 'Plie_Dumbbell_Squat',                      met: 5.0,  bodyFraction: 0.56, isWeighted: true,  burnCoeff: 0.005 },
-  // ── Arms ──
-  { id: 'bicep-curl',       name: 'Bicep Curls',          category: 'Arms',      imgFolder: 'Barbell_Curl',                             met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'hammer-curl',      name: 'Hammer Curls',         category: 'Arms',      imgFolder: 'Hammer_Curls',                             met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'tricep-push',      name: 'Tricep Pushdown',      category: 'Arms',      imgFolder: 'Triceps_Pushdown',                         met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'skull-crusher',    name: 'Skull Crushers',       category: 'Arms',      imgFolder: 'EZ-Bar_Skullcrusher',                      met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'tricep-dip',       name: 'Tricep Dips',          category: 'Arms',      imgFolder: 'Dips_-_Triceps_Version',                   met: 6.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.005 },
-  { id: 'shoulder-press',   name: 'Shoulder Press',       category: 'Arms',      imgFolder: 'Dumbbell_Shoulder_Press',                  met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
-  { id: 'lateral-raise',    name: 'Lateral Raises',       category: 'Arms',      imgFolder: 'Side_Lateral_Raise',                       met: 3.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.003 },
-  { id: 'arnold-press',     name: 'Arnold Press',         category: 'Arms',      imgFolder: 'Arnold_Dumbbell_Press',                    met: 3.5,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.004 },
-  // ── Core ──
-  { id: 'plank',            name: 'Plank',                category: 'Core',      imgFolder: 'Plank',                                    met: 3.8,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'side-plank',       name: 'Side Plank',           category: 'Core',      imgFolder: 'Side_Bridge',                              met: 3.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'crunches',         name: 'Crunches',             category: 'Core',      imgFolder: 'Crunches',                                 met: 3.8,  bodyFraction: 0.3,  isWeighted: false, burnCoeff: 0.003 },
-  { id: 'bicycle-crunch',   name: 'Bicycle Crunches',     category: 'Core',      imgFolder: 'Cross-Body_Crunch',                        met: 5.0,  bodyFraction: 0.35, isWeighted: false, burnCoeff: 0.003 },
-  { id: 'russian-twist',    name: 'Russian Twists',       category: 'Core',      imgFolder: 'Russian_Twist',                            met: 4.0,  bodyFraction: 0.3,  isWeighted: false, burnCoeff: 0.003 },
-  { id: 'leg-raise',        name: 'Hanging Leg Raises',   category: 'Core',      imgFolder: 'Hanging_Leg_Raise',                        met: 4.5,  bodyFraction: 0.6,  isWeighted: false, burnCoeff: 0.004 },
-  { id: 'v-ups',            name: 'V-Ups',                category: 'Core',      imgFolder: 'Jackknife_Sit-Up',                         met: 5.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.004 },
-  { id: 'ab-wheel',         name: 'Ab Wheel Rollout',     category: 'Core',      imgFolder: 'Ab_Roller',                                met: 5.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.005 },
-  { id: 'mtn-climbers',     name: 'Mountain Climbers',    category: 'Core',      imgFolder: 'Mountain_Climbers',                        met: 8.0,  bodyFraction: 0.5,  isWeighted: false, burnCoeff: 0.004 },
-  // ── Cardio ──
-  { id: 'walking',          name: 'Walking',              category: 'Cardio',    imgFolder: 'Walking_Treadmill',                        met: 3.5,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'brisk-walk',       name: 'Brisk Walking',        category: 'Cardio',    imgFolder: 'Walking_Treadmill',                        met: 4.3,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'hiking',           name: 'Hiking',               category: 'Cardio',    imgFolder: 'Trail_Running_Walking',                    met: 5.3,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'running',          name: 'Running',              category: 'Cardio',    imgFolder: 'Running_Treadmill',                        met: 9.8,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'jogging',          name: 'Jogging',              category: 'Cardio',    imgFolder: 'Jogging_Treadmill',                        met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'cycling',          name: 'Cycling',              category: 'Cardio',    imgFolder: 'Bicycling_Stationary',                     met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'swimming',         name: 'Swimming',             category: 'Cardio',    imgFolder: 'Butterfly',                                met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'elliptical',       name: 'Elliptical',           category: 'Cardio',    imgFolder: 'Elliptical_Trainer',                       met: 5.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'rowing-machine',   name: 'Rowing Machine',       category: 'Cardio',    imgFolder: 'Rowing_Stationary',                        met: 7.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'stair-climb',      name: 'Stair Climbing',       category: 'Cardio',    imgFolder: 'Stairmaster',                              met: 9.0,  bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'battle-ropes',     name: 'Battle Ropes',         category: 'Cardio',    imgFolder: 'Battling_Ropes',                           met: 10.0, bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  { id: 'star-jump',        name: 'Star Jumps',           category: 'Cardio',    imgFolder: 'Star_Jump',                                met: 8.0,  bodyFraction: 0.8,  isWeighted: false, burnCoeff: 0.004 },
-  { id: 'jump-rope',        name: 'Jump Rope',            category: 'Cardio',    imgFolder: 'Rope_Jumping',                             met: 11.8, bodyFraction: 0.0,  isWeighted: false, burnCoeff: 0.0,   durationOnly: true },
-  // ── Full Body ──
-  { id: 'burpees',          name: 'Burpees',              category: 'Full Body', imgFolder: 'Plyo_Push-up',                             met: 8.0,  bodyFraction: 0.9,  isWeighted: false, burnCoeff: 0.006 },
-  { id: 'box-jump',         name: 'Box Jump',             category: 'Full Body', imgFolder: 'Box_Jump_Multiple_Response',               met: 8.0,  bodyFraction: 1.0,  isWeighted: false, burnCoeff: 0.006 },
-  { id: 'kettlebell-swing', name: 'Kettlebell Swings',    category: 'Full Body', imgFolder: 'One-Arm_Kettlebell_Swings',                met: 9.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.007 },
-  { id: 'thruster',         name: 'Thrusters',            category: 'Full Body', imgFolder: 'Kettlebell_Thruster',                      met: 8.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
-  { id: 'clean-jerk',       name: 'Clean & Jerk',         category: 'Full Body', imgFolder: 'Clean_and_Jerk',                           met: 8.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.007 },
-  { id: 'turkish-getup',    name: 'Turkish Get-Up',       category: 'Full Body', imgFolder: 'Kettlebell_Turkish_Get-Up_Lunge_style',    met: 5.0,  bodyFraction: 0.0,  isWeighted: true,  burnCoeff: 0.006 },
-];
-
-// ── Calorie calculation ──────────────────────────────────────────────────────
+// ── Per-card input state ─────────────────────────────────────────────────────
 interface ExState {
   mode: 'duration' | 'reps';
   value: string;  // minutes (duration) or reps per set (reps)
@@ -133,32 +22,46 @@ interface ExState {
   load: string;   // extra load weight in kg (barbell / dumbbell)
 }
 
-function calcCalories(ex: Exercise, s: ExState, bodyKg: number): number | null {
+interface Estimate {
+  calories: number;
+  breakdown: StrengthBreakdown | null;
+}
+
+function estimate(ex: Exercise, s: ExState, bodyKg: number, restSeconds: number): Estimate | null {
   const v = parseFloat(s.value);
   if (isNaN(v) || v <= 0 || bodyKg <= 0) return null;
 
-  if (s.mode === 'duration') {
-    // MET formula — accurate for continuous-movement cardio (no rest periods)
-    return Math.round(ex.met * bodyKg * (v / 60) * 10) / 10;
+  if (s.mode === 'duration' || ex.durationOnly) {
+    return { calories: cardioCalories(ex.met, v, bodyKg), breakdown: null };
   }
 
-  // Reps mode — mechanical work model (more accurate for gym strength training)
-  const sets = Math.max(1, parseFloat(s.sets) || 1);
-  const loadKg = ex.isWeighted ? Math.max(0, parseFloat(s.load) || 0) : 0;
-  const effectiveKg = ex.bodyFraction * bodyKg + loadKg;
-  if (effectiveKg <= 0) return null;
-  return Math.round(sets * v * effectiveKg * ex.burnCoeff * 10) / 10;
+  const b = strengthCalories({
+    met: ex.met,
+    sets: parseInt(s.sets) || 1,
+    reps: v,
+    loadKg: ex.isWeighted ? Math.max(0, parseFloat(s.load) || 0) : 0,
+    bodyKg,
+    secPerRep: ex.secPerRep,
+    restSeconds,
+  });
+  return b ? { calories: b.calories, breakdown: b } : null;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 export default function WorkoutPage() {
-  const { data, addWorkout, deleteWorkout } = useAppData();
+  const { data, addWorkout, deleteWorkout, updateSettings } = useAppData();
   const { user } = useAuth();
 
   const latestWeight = data.weights[data.weights.length - 1]?.weightKg;
 
   const [tab, setTab]           = useState<'catalog' | 'history'>('catalog');
-  const [weight, setWeight]     = useState<string>(latestWeight ? String(latestWeight) : '70');
+  // Body weight / rest: a local edit overrides the profile value, which is
+  // prefilled from the Progress log and Settings once they have loaded.
+  const [weightEdit, setWeightEdit] = useState<string | null>(null);
+  const weight = weightEdit ?? (latestWeight ? String(latestWeight) : '');
+  const weightTouched = weightEdit !== null;
+  const [restEdit, setRestEdit] = useState<string | null>(null);
+  const rest = restEdit ?? String(data.settings.restSeconds);
   const [filter, setFilter]     = useState('All');
   const [search, setSearch]     = useState('');
   const [modalEx, setModalEx]   = useState<Exercise | null>(null);
@@ -170,12 +73,24 @@ export default function WorkoutPage() {
   const [expanded, setExpanded]     = useState<string | null>(null);
 
   const bodyKg = Math.max(1, parseFloat(weight) || 70);
+  const restSeconds = Math.max(0, parseInt(rest) || 0);
 
   function getState(id: string, ex: Exercise): ExState {
     return exStates[id] ?? { mode: ex.durationOnly ? 'duration' : 'reps', value: '', sets: '3', load: '' };
   }
   function patchState(id: string, patch: Partial<ExState>) {
     setExStates(prev => ({ ...prev, [id]: { ...getState(id, EXERCISES.find(e => e.id === id)!), ...patch } }));
+  }
+
+  async function commitRest() {
+    const v = Math.max(0, Math.min(600, parseInt(rest) || 0));
+    setRestEdit(String(v));
+    if (user && v !== data.settings.restSeconds) {
+      try {
+        await updateSettings({ restSeconds: v });
+        setRestEdit(null); // follow the saved profile value from now on
+      } catch { /* surfaced on the Settings page if the migration is missing */ }
+    }
   }
 
   const filtered = EXERCISES
@@ -187,12 +102,16 @@ export default function WorkoutPage() {
     [session],
   );
 
+  const past7 = getPast7Days();
+  const weekSessions = data.workouts.filter(w => past7.includes(w.date));
+  const weekBurn = Math.round(weekSessions.reduce((s, w) => s + w.totalCalories, 0));
+
   /* ── Session actions ── */
 
   function addToSession(ex: Exercise) {
     const s = getState(ex.id, ex);
-    const cals = calcCalories(ex, s, bodyKg);
-    if (cals === null) return;
+    const est = estimate(ex, s, bodyKg, restSeconds);
+    if (!est) return;
 
     let sets;
     if (s.mode === 'duration' || ex.durationOnly) {
@@ -204,12 +123,18 @@ export default function WorkoutPage() {
       sets = Array.from({ length: nSets }, () => ({ reps, weightKg: load }));
     }
 
-    setSession(prev => [...prev, { name: ex.name, category: ex.category, sets, calories: cals }]);
+    setSession(prev => [...prev, { name: ex.name, category: ex.category, sets, calories: est.calories }]);
     patchState(ex.id, { value: '' });
   }
 
   function removeFromSession(idx: number) {
     setSession(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function repeatWorkout(w: WorkoutSession) {
+    setSession(w.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s })) })));
+    setTab('catalog');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function saveSession() {
@@ -316,59 +241,77 @@ export default function WorkoutPage() {
 
       {tab === 'history' ? (
         /* ═════════ HISTORY TAB ═════════ */
-        data.workouts.length === 0 ? (
-          <div className="card">
-            <div className="empty-state">
-              <div className="empty-icon"><History size={22} /></div>
-              No workouts saved yet. Build a session in the Exercises tab and hit Finish.
+        <>
+          <div className="home-stats" style={{ marginBottom: '1rem' }}>
+            <div className="card">
+              <div className="card-label">This week</div>
+              <div className="card-value">{weekSessions.length}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>session{weekSessions.length !== 1 ? 's' : ''} in 7 days</div>
+            </div>
+            <div className="card">
+              <div className="card-label">Burned this week</div>
+              <div className="card-value" style={{ color: 'var(--accent-warn)' }}>{weekBurn}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>kcal estimated</div>
             </div>
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {data.workouts.map(w => (
-              <div key={w.id} className="card">
-                <div className="row-between">
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatFullDate(w.date)}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                      {w.exercises.length} exercise{w.exercises.length !== 1 ? 's' : ''}
-                      <span style={{ margin: '0 0.4rem' }}>·</span>
-                      <Flame size={12} style={{ display: 'inline', verticalAlign: '-2px', color: 'var(--accent-warn)' }} /> ~{w.totalCalories} kcal
+
+          {data.workouts.length === 0 ? (
+            <div className="card">
+              <div className="empty-state">
+                <div className="empty-icon"><History size={22} /></div>
+                No workouts saved yet. Build a session in the Exercises tab and hit Finish.
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {data.workouts.map(w => (
+                <div key={w.id} className="card">
+                  <div className="row-between">
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{formatFullDate(w.date)}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                        {w.exercises.length} exercise{w.exercises.length !== 1 ? 's' : ''}
+                        <span style={{ margin: '0 0.4rem' }}>·</span>
+                        <Flame size={12} style={{ display: 'inline', verticalAlign: '-2px', color: 'var(--accent-warn)' }} /> ~{Math.round(w.totalCalories)} kcal
+                      </div>
+                    </div>
+                    <div className="row" style={{ gap: '0.25rem' }}>
+                      <button className="icon-btn" onClick={() => repeatWorkout(w)} title="Repeat this workout">
+                        <RotateCcw size={15} />
+                      </button>
+                      <button className="icon-btn" onClick={() => setExpanded(expanded === w.id ? null : w.id)} title="Details">
+                        {expanded === w.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                      <button className="icon-btn danger" title="Delete workout"
+                        onClick={() => user ? deleteWorkout(w.id) : setShowLogin(true)}>
+                        <Trash2 size={15} />
+                      </button>
                     </div>
                   </div>
-                  <div className="row" style={{ gap: '0.25rem' }}>
-                    <button className="icon-btn" onClick={() => setExpanded(expanded === w.id ? null : w.id)} title="Details">
-                      {expanded === w.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </button>
-                    <button className="icon-btn danger" title="Delete workout"
-                      onClick={() => user ? deleteWorkout(w.id) : setShowLogin(true)}>
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
 
-                {expanded === w.id && (
-                  <div style={{ marginTop: '0.875rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-                    {w.exercises.map((e, i) => {
-                      const col = CAT_COLOR[e.category] ?? DEFAULT_COLOR;
-                      return (
-                        <div key={i} className="row-between">
-                          <span className="row" style={{ gap: '0.5rem' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: 999, background: col.text, flexShrink: 0 }} />
-                            <span style={{ fontSize: '0.85rem' }}>{e.name}</span>
-                          </span>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
-                            {describeSets(e)} · ~{e.calories} kcal
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )
+                  {expanded === w.id && (
+                    <div style={{ marginTop: '0.875rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+                      {w.exercises.map((e, i) => {
+                        const col = CAT_COLOR[e.category] ?? DEFAULT_COLOR;
+                        return (
+                          <div key={i} className="row-between">
+                            <span className="row" style={{ gap: '0.5rem' }}>
+                              <span style={{ width: 8, height: 8, borderRadius: 999, background: col.text, flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.85rem' }}>{e.name}</span>
+                            </span>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+                              {describeSets(e)} · ~{e.calories} kcal
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         /* ═════════ CATALOG TAB ═════════ */
         <>
@@ -403,7 +346,7 @@ export default function WorkoutPage() {
             )}
           </div>
 
-          {/* ── Weight + method info card ── */}
+          {/* ── Weight + rest + method info card ── */}
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <div>
@@ -416,19 +359,40 @@ export default function WorkoutPage() {
                     max="300"
                     placeholder="70"
                     value={weight}
-                    onChange={e => setWeight(e.target.value)}
+                    onChange={e => setWeightEdit(e.target.value)}
                     style={{ width: '80px', textAlign: 'center' }}
                   />
                   <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600 }}>kg</span>
                 </div>
-                {latestWeight !== undefined && (
+                {latestWeight !== undefined && !weightTouched && (
                   <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 4 }}>
                     prefilled from Progress
                   </p>
                 )}
               </div>
 
-              <div style={{ flex: 1, minWidth: '200px' }}>
+              <div>
+                <p className="card-label"><Timer size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4 }} />Rest between sets</p>
+                <div className="row" style={{ gap: '0.5rem' }}>
+                  <input
+                    type="number"
+                    className="input"
+                    min="0"
+                    max="600"
+                    step="15"
+                    value={rest}
+                    onChange={e => setRestEdit(e.target.value)}
+                    onBlur={commitRest}
+                    style={{ width: '80px', textAlign: 'center' }}
+                  />
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600 }}>sec</span>
+                </div>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 4 }}>
+                  {user ? 'saved to your profile' : 'sign in to remember this'}
+                </p>
+              </div>
+
+              <div style={{ flex: 1, minWidth: '220px' }}>
                 <button
                   onClick={() => setShowInfo(s => !s)}
                   style={{
@@ -446,25 +410,26 @@ export default function WorkoutPage() {
                 {showInfo ? (
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
                     <p>
-                      <strong style={{ color: 'var(--accent-primary)' }}>Strength (Reps mode):</strong>{' '}
-                      <span className="mono-num" style={{ fontSize: '0.72rem' }}>sets × reps × load(kg) × coeff</span>
-                    </p>
-                    <p style={{ marginTop: '0.2rem', fontSize: '0.72rem' }}>
-                      Based on mechanical work studies (Robergs et al., ACSM). Counts only actual
-                      lifting time — rest periods between sets are correctly excluded.
+                      Everything uses the standard MET formula from the Compendium of Physical Activities:{' '}
+                      <span className="mono-num" style={{ fontSize: '0.72rem', color: 'var(--text-primary)' }}>kcal = MET × weight(kg) × hours</span>
                     </p>
                     <p style={{ marginTop: '0.35rem' }}>
-                      <strong style={{ color: 'var(--accent-primary)' }}>Cardio (Duration mode):</strong>{' '}
-                      <span className="mono-num" style={{ fontSize: '0.72rem' }}>MET × weight(kg) × (min ÷ 60)</span>
+                      <strong style={{ color: 'var(--accent-primary)' }}>Cardio / timed:</strong> the minutes you enter go straight into the formula.
                     </p>
-                    <p style={{ marginTop: '0.2rem', fontSize: '0.72rem' }}>
-                      Standard formula from the Compendium of Physical Activities — accurate for
-                      continuous movement with no rest breaks.
+                    <p style={{ marginTop: '0.35rem' }}>
+                      <strong style={{ color: 'var(--accent-primary)' }}>Strength:</strong> time under tension is estimated from
+                      sets × reps × tempo (≈4 s per rep for lifts, ≈2.5 s for bodyweight), plus your rest time between
+                      sets at a light “recovery” rate — your heart rate stays elevated while you rest.
+                      Heavier loads relative to your body weight raise the intensity.
+                    </p>
+                    <p style={{ marginTop: '0.35rem', fontSize: '0.72rem' }}>
+                      Numbers are gross estimates (they include what you would have burned anyway) and typically match
+                      what a smartwatch reports within ±20 %.
                     </p>
                   </div>
                 ) : (
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    Strength: mechanical-work model · Cardio: MET formula ·{' '}
+                    MET formula · tempo + rest model for lifts ·{' '}
                     <strong style={{ color: 'var(--accent-primary)' }}>{bodyKg} kg</strong>
                   </p>
                 )}
@@ -493,7 +458,7 @@ export default function WorkoutPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '1rem' }}>
             {filtered.map(ex => {
               const s    = getState(ex.id, ex);
-              const cals = calcCalories(ex, s, bodyKg);
+              const est  = estimate(ex, s, bodyKg, restSeconds);
               const col  = CAT_COLOR[ex.category] ?? DEFAULT_COLOR;
 
               return (
@@ -608,7 +573,7 @@ export default function WorkoutPage() {
                         {ex.isWeighted && (
                           <div>
                             <p style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.2rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                              Load (kg) <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— barbell / dumbbell</span>
+                              Load (kg) <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— optional, barbell / dumbbell</span>
                             </p>
                             <input
                               className="input"
@@ -625,30 +590,35 @@ export default function WorkoutPage() {
 
                     {/* Calorie result + add to session */}
                     <div style={{ marginTop: '0.75rem', minHeight: '2.5rem' }}>
-                      {cals !== null ? (
-                        <div className="row" style={{ gap: '0.5rem' }}>
-                          <div style={{
-                            flex: 1, padding: '0.5rem 0.875rem', borderRadius: '9px',
-                            background: 'var(--accent-primary-dim)', border: '1px solid rgba(52,211,153,0.25)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          }}>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Est.</span>
-                            <span className="mono-num" style={{ fontWeight: 700, color: 'var(--accent-primary)', fontSize: '0.95rem' }}>
-                              ~{cals} kcal
-                            </span>
+                      {est ? (
+                        <>
+                          <div className="row" style={{ gap: '0.5rem' }}>
+                            <div style={{
+                              flex: 1, padding: '0.5rem 0.875rem', borderRadius: '9px',
+                              background: 'var(--accent-primary-dim)', border: '1px solid rgba(52,211,153,0.25)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Est.</span>
+                              <span className="mono-num" style={{ fontWeight: 700, color: 'var(--accent-primary)', fontSize: '0.95rem' }}>
+                                ~{est.calories} kcal
+                              </span>
+                            </div>
+                            <button className="btn-primary" style={{ padding: '0.5rem 0.75rem' }}
+                              onClick={() => addToSession(ex)} title="Add to session">
+                              <Plus size={16} />
+                            </button>
                           </div>
-                          <button className="btn-primary" style={{ padding: '0.5rem 0.75rem' }}
-                            onClick={() => addToSession(ex)} title="Add to session">
-                            <Plus size={16} />
-                          </button>
-                        </div>
+                          {est.breakdown && (
+                            <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: '0.35rem' }}>
+                              ≈ {est.breakdown.workMinutes} min work + {est.breakdown.restMinutes} min rest · {est.breakdown.effectiveMet} MET
+                            </p>
+                          )}
+                        </>
                       ) : (
                         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', paddingTop: '0.5rem' }}>
                           {s.mode === 'duration' || ex.durationOnly
                             ? 'Enter minutes, then add to your session'
-                            : ex.isWeighted
-                              ? 'Enter sets, reps & load, then add'
-                              : 'Enter sets & reps, then add'}
+                            : 'Enter sets & reps, then add'}
                         </p>
                       )}
                     </div>

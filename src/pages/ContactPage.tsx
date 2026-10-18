@@ -181,7 +181,7 @@ export default function ContactPage() {
           <span style={{ color: 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>React + TypeScript</span>,{' '}
           <span style={{ color: 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>Tailwind CSS</span>, and{' '}
           <span style={{ color: 'var(--accent-primary)', fontFamily: 'JetBrains Mono, monospace' }}>Claude AI</span>.
-          All data stays on your device — no accounts, no servers, just pure local storage. Built with{' '}
+          Your data is stored securely in Supabase and synced across your devices, hosted on Vercel. Built with{' '}
           <Heart size={13} style={{ display: 'inline', verticalAlign: 'middle' }} color="var(--accent-danger)" />{' '}
           and too much coffee.
         </p>

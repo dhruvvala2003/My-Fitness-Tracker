@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useReducer, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Flame } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
@@ -47,7 +47,7 @@ function saveBreakReason(streakId: string, date: string, reason: string) {
     if (reason.trim()) all[streakId][date] = reason.trim();
     else delete all[streakId][date];
     localStorage.setItem('fittrack_break_reasons', JSON.stringify(all));
-  } catch {}
+  } catch { /* storage unavailable — reasons are a local convenience only */ }
 }
 
 function removeBreakReasonLS(streakId: string, date: string) {
@@ -57,7 +57,7 @@ function removeBreakReasonLS(streakId: string, date: string) {
       delete all[streakId][date];
       localStorage.setItem('fittrack_break_reasons', JSON.stringify(all));
     }
-  } catch {}
+  } catch { /* storage unavailable — reasons are a local convenience only */ }
 }
 
 export default function StreakDetailPage() {
@@ -67,14 +67,12 @@ export default function StreakDetailPage() {
   const { user } = useAuth();
   const [breakDate, setBreakDate] = useState(today());
   const [breakReason, setBreakReason] = useState('');
-  const [reasons, setReasons] = useState<Record<string, string>>({});
+  // Break reasons live in localStorage; bump a counter to re-read after writes.
+  const [, bumpReasons] = useReducer((n: number) => n + 1, 0);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const streak = data.streaks.find(s => s.id === id);
-
-  useEffect(() => {
-    if (streak?.id) setReasons(getBreakReasons(streak.id));
-  }, [streak?.id]);
+  const reasons: Record<string, string> = streak ? getBreakReasons(streak.id) : {};
 
   if (!streak) {
     return (
@@ -96,7 +94,7 @@ export default function StreakDetailPage() {
     logBreakDate(streak!.id, breakDate);
     if (breakReason.trim()) {
       saveBreakReason(streak!.id, breakDate, breakReason);
-      setReasons(prev => ({ ...prev, [breakDate]: breakReason.trim() }));
+      bumpReasons();
     }
     setBreakReason('');
   }
@@ -105,11 +103,7 @@ export default function StreakDetailPage() {
     if (!user) { setShowLoginPrompt(true); return; }
     removeBreakDate(streak!.id, d);
     removeBreakReasonLS(streak!.id, d);
-    setReasons(prev => {
-      const next = { ...prev };
-      delete next[d];
-      return next;
-    });
+    bumpReasons();
   }
 
   return (

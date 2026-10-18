@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Dumbbell } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth, checkUserApproval, ADMIN_EMAIL } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
+import { checkUserApproval, ADMIN_EMAIL } from '../lib/auth';
 
 type Mode = 'signin' | 'signup' | 'forgot';
 

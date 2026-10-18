@@ -20,9 +20,9 @@ export interface StreakData {
 export interface CalorieEntry {
   id: string;
   name: string;
-  amount: number;
+  amount: number;     // grams (or ml)
   calories: number;
-  time: string;
+  time: string;       // HH:MM
 }
 
 export interface InsightEntry {
@@ -62,6 +62,47 @@ export interface WorkoutSession {
   totalCalories: number;
 }
 
+/* ── Profile & preferences (stored in user_settings) ───────────── */
+export type ActivityLevel = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
+export type Goal = 'lose' | 'maintain' | 'gain';
+export type Sex = 'male' | 'female' | 'other';
+
+export interface UserSettings {
+  popupMessage: string;
+  heightCm: number | null;
+  birthYear: number | null;
+  sex: Sex | null;
+  activityLevel: ActivityLevel;
+  goal: Goal;
+  targetWeightKg: number | null;
+  calorieTargetOverride: number | null; // manual daily target; null → computed from profile
+  waterGoal: number;                    // glasses per day
+  restSeconds: number;                  // rest between sets, used by the burn estimate
+}
+
+export const DEFAULT_SETTINGS: UserSettings = {
+  popupMessage: '',
+  heightCm: null,
+  birthYear: null,
+  sex: null,
+  activityLevel: 'moderate',
+  goal: 'maintain',
+  targetWeightKg: null,
+  calorieTargetOverride: null,
+  waterGoal: 8,
+  restSeconds: 90,
+};
+
+/* ── Video library permissions (granted by the admin) ──────────── */
+export interface VideoPermissions {
+  canUpload: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+export const NO_VIDEO_PERMISSIONS: VideoPermissions = { canUpload: false, canEdit: false, canDelete: false };
+export const ALL_VIDEO_PERMISSIONS: VideoPermissions = { canUpload: true, canEdit: true, canDelete: true };
+
 export interface AppData {
   habits: HabitsData;
   coreHabits: CoreHabitsData;
@@ -70,7 +111,8 @@ export interface AppData {
   insights: InsightEntry[];
   weights: WeightEntry[];
   workouts: WorkoutSession[];
-  popupMessage: string;
+  water: Record<string, number>;   // date → glasses
+  settings: UserSettings;
 }
 
 export const DEFAULT_DATA: AppData = {
@@ -97,5 +139,6 @@ export const DEFAULT_DATA: AppData = {
   insights: [],
   weights: [],
   workouts: [],
-  popupMessage: '',
+  water: {},
+  settings: DEFAULT_SETTINGS,
 };

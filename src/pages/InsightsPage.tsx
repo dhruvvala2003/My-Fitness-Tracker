@@ -77,7 +77,7 @@ function StarRating({
 export default function InsightsPage() {
   const { data, loading, addInsight, deleteInsight, updateInsightRating, updateInsight } = useAppData();
   const { user } = useAuth();
-  const insights = data.insights ?? [];
+  const insights = data.insights;
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
 
   const [tab, setTab] = useState<Tab>('all');

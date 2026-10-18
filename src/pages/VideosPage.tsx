@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Plus, Play, Trash2, Video, X, Upload, User, Pencil, Check, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  Plus, Play, Trash2, Video, X, Upload, User, Pencil, Check, ChevronUp, ChevronDown,
+  Lock, ShieldCheck, AlertTriangle,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
@@ -25,8 +28,26 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function fetchVideos(): Promise<VideoMeta[] | null> {
+  const { data, error } = await supabase
+    .from('exercise_videos')
+    .select('*')
+    .order('created_at', { ascending: false });
+  return !error && data ? (data as VideoMeta[]) : null;
+}
+
+/** Keep the user's local display order, appending any videos not seen before. */
+function mergeOrder(prev: string[], list: VideoMeta[]): string[] {
+  const existing = new Set(prev);
+  const newIds = list.filter(v => !existing.has(v.id)).map(v => v.id);
+  if (newIds.length === 0) return prev;
+  const merged = [...prev, ...newIds];
+  localStorage.setItem('fittrack_video_order', JSON.stringify(merged));
+  return merged;
+}
+
 export default function VideosPage() {
-  const { user } = useAuth();
+  const { user, isAdmin, videoPerms } = useAuth();
   const [videos, setVideos] = useState<VideoMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
@@ -39,35 +60,56 @@ export default function VideosPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showNoAccess, setShowNoAccess] = useState(false);
+  const [editing, setEditing] = useState<VideoMeta | null>(null);
   const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState('Other');
+  const [confirmDelete, setConfirmDelete] = useState<VideoMeta | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [emails, setEmails] = useState<Record<string, string>>({});
   const [orderedIds, setOrderedIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('fittrack_video_order') || '[]'); }
     catch { return []; }
   });
   const fileRef = useRef<HTMLInputElement>(null);
 
-  async function loadVideos() {
-    const { data, error } = await supabase
-      .from('exercise_videos')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error && data) {
-      setVideos(data as VideoMeta[]);
-      // Seed order for any new videos not yet in orderedIds
-      setOrderedIds(prev => {
-        const existing = new Set(prev);
-        const newIds = (data as VideoMeta[]).filter(v => !existing.has(v.id)).map(v => v.id);
-        if (newIds.length === 0) return prev;
-        const merged = [...prev, ...newIds];
-        localStorage.setItem('fittrack_video_order', JSON.stringify(merged));
-        return merged;
-      });
+  function applyVideos(list: VideoMeta[] | null) {
+    if (list) {
+      setVideos(list);
+      setOrderedIds(prev => mergeOrder(prev, list));
     }
     setLoading(false);
   }
 
-  useEffect(() => { loadVideos(); }, []);
+  useEffect(() => {
+    let active = true;
+    fetchVideos().then(list => {
+      if (!active) return;
+      if (list) {
+        setVideos(list);
+        setOrderedIds(prev => mergeOrder(prev, list));
+      }
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
+
+  // Admin sees who uploaded each video.
+  useEffect(() => {
+    if (!isAdmin) return;
+    supabase.from('user_approvals').select('user_id, email').then(({ data }) => {
+      const map: Record<string, string> = {};
+      for (const row of data ?? []) map[row.user_id] = row.email;
+      setEmails(map);
+    });
+  }, [isAdmin]);
+
+  /* ── Permission helpers ── */
+  function ownsOrAdmin(v: VideoMeta) {
+    return isAdmin || (!!user && v.uploaded_by === user.id);
+  }
+  const canEditVideo = (v: VideoMeta) => ownsOrAdmin(v) && videoPerms.canEdit;
+  const canDeleteVideo = (v: VideoMeta) => ownsOrAdmin(v) && videoPerms.canDelete;
 
   async function handlePlay(video: VideoMeta) {
     if (playingId === video.id) {
@@ -85,6 +127,7 @@ export default function VideosPage() {
 
   function handleAddVideoClick() {
     if (!user) { setShowLoginPrompt(true); return; }
+    if (!videoPerms.canUpload) { setShowNoAccess(true); return; }
     setShowForm(s => !s);
     setError(null);
   }
@@ -102,7 +145,9 @@ export default function VideosPage() {
       .upload(filePath, file, { contentType: file.type });
 
     if (uploadError) {
-      setError(`Upload failed: ${uploadError.message}`);
+      setError(/policy|permission|row-level/i.test(uploadError.message)
+        ? 'Upload blocked: you do not have upload permission. Ask the admin to enable it.'
+        : `Upload failed: ${uploadError.message}`);
       setUploading(false);
       return;
     }
@@ -119,12 +164,16 @@ export default function VideosPage() {
     });
 
     if (insertError) {
-      setError(`Save failed: ${insertError.message}`);
+      // keep storage tidy if the row was rejected
+      await supabase.storage.from(BUCKET).remove([filePath]);
+      setError(/policy|permission|row-level/i.test(insertError.message)
+        ? 'Save blocked: you do not have upload permission. Ask the admin to enable it.'
+        : `Save failed: ${insertError.message}`);
       setUploading(false);
       return;
     }
 
-    await loadVideos();
+    applyVideos(await fetchVideos());
     setName('');
     setCategory('Other');
     setFile(null);
@@ -133,10 +182,21 @@ export default function VideosPage() {
     setUploading(false);
   }
 
-  async function handleDelete(video: VideoMeta) {
-    if (!user) { setShowLoginPrompt(true); return; }
+  async function performDelete(video: VideoMeta) {
+    setBusy(true);
+    setError(null);
+    // Delete the DB row first — RLS decides. Only then remove the file.
+    const { error: rowErr, count } = await supabase
+      .from('exercise_videos')
+      .delete({ count: 'exact' })
+      .eq('id', video.id);
+    if (rowErr || count === 0) {
+      setError(rowErr ? `Delete failed: ${rowErr.message}` : 'Delete blocked: you do not have permission to delete this video.');
+      setBusy(false);
+      setConfirmDelete(null);
+      return;
+    }
     await supabase.storage.from(BUCKET).remove([video.file_path]);
-    await supabase.from('exercise_videos').delete().eq('id', video.id);
     if (playingId === video.id) {
       setPlayingUrl(null);
       setPlayingId(null);
@@ -147,15 +207,33 @@ export default function VideosPage() {
       localStorage.setItem('fittrack_video_order', JSON.stringify(next));
       return next;
     });
+    setBusy(false);
+    setConfirmDelete(null);
   }
 
-  async function handleRename(video: VideoMeta) {
-    if (!editName.trim() || !user) return;
+  function openEdit(v: VideoMeta) {
+    setEditing(v);
+    setEditName(v.name);
+    setEditCategory(v.category);
+    setError(null);
+  }
+
+  async function saveEdit() {
+    if (!editing || !editName.trim()) return;
+    setBusy(true);
     const newName = editName.trim();
-    await supabase.from('exercise_videos').update({ name: newName }).eq('id', video.id);
-    setVideos(v => v.map(x => x.id === video.id ? { ...x, name: newName } : x));
-    setEditingId(null);
-    setEditName('');
+    const { data: updated, error: err } = await supabase
+      .from('exercise_videos')
+      .update({ name: newName, category: editCategory })
+      .eq('id', editing.id)
+      .select('id');
+    if (err || !updated || updated.length === 0) {
+      setError(err ? `Update failed: ${err.message}` : 'Update blocked: you do not have permission to edit this video.');
+    } else {
+      setVideos(v => v.map(x => x.id === editing.id ? { ...x, name: newName, category: editCategory } : x));
+      setEditing(null);
+    }
+    setBusy(false);
   }
 
   function moveVideo(id: string, direction: 'up' | 'down') {
@@ -185,6 +263,13 @@ export default function VideosPage() {
 
   const filtered = filter === 'All' ? sortedVideos : sortedVideos.filter(v => v.category === filter);
 
+  const accessSummary = !user ? null : isAdmin ? 'admin — full access' : [
+    'watch',
+    videoPerms.canUpload && 'upload',
+    videoPerms.canEdit && 'edit',
+    videoPerms.canDelete && 'delete',
+  ].filter(Boolean).join(' · ');
+
   return (
     <div className="page">
       {showLoginPrompt && (
@@ -194,12 +279,89 @@ export default function VideosPage() {
         />
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-        <h1 className="page-title" style={{ marginBottom: 0 }}>Exercise Videos</h1>
-        <button className="btn-primary" onClick={handleAddVideoClick}>
-          <Plus size={16} /> Add Video
+      {/* No-permission dialog */}
+      {showNoAccess && (
+        <div className="modal-backdrop" onClick={() => setShowNoAccess(false)}>
+          <div className="modal-card" style={{ maxWidth: 400, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(251,191,36,0.1)', border: '1.5px solid rgba(251,191,36,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0.25rem auto 1rem' }}>
+              <Lock size={22} color="var(--accent-warn)" />
+            </div>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Upload not enabled</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
+              You can watch every video in the library, but adding videos is switched on per user by the admin.
+              Ask the admin to enable <strong>Upload</strong> for your account.
+            </p>
+            <button className="btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setShowNoAccess(false)}>OK</button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit dialog */}
+      {editing && (
+        <div className="modal-backdrop" onClick={() => setEditing(null)}>
+          <div className="modal-card" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="row-between" style={{ marginBottom: '1rem' }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Edit video</h2>
+              <button className="icon-btn" onClick={() => setEditing(null)}><X size={17} /></button>
+            </div>
+            <p className="field-label">Name</p>
+            <input className="input" value={editName} onChange={e => setEditName(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') saveEdit(); }} />
+            <p className="field-label" style={{ marginTop: '0.75rem' }}>Category</p>
+            <select className="input" value={editCategory} onChange={e => setEditCategory(e.target.value)}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {error && <p className="form-error">{error}</p>}
+            <div className="row" style={{ gap: '0.5rem', marginTop: '1.25rem' }}>
+              <button className="btn-primary" onClick={saveEdit} disabled={busy || !editName.trim()}><Check size={14} /> Save</button>
+              <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="modal-backdrop" onClick={() => !busy && setConfirmDelete(null)}>
+          <div className="modal-card" style={{ maxWidth: 400, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(248,113,113,0.1)', border: '1.5px solid rgba(248,113,113,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0.25rem auto 1rem' }}>
+              <AlertTriangle size={24} color="var(--accent-danger)" />
+            </div>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Delete “{confirmDelete.name}”?</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
+              The video file ({formatSize(confirmDelete.size)}) is removed for everyone. This cannot be undone.
+            </p>
+            <div className="row" style={{ gap: '0.625rem' }}>
+              <button className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setConfirmDelete(null)} disabled={busy}>Cancel</button>
+              <button className="btn-danger" style={{ flex: 1, justifyContent: 'center' }} onClick={() => performDelete(confirmDelete)} disabled={busy}>
+                <Trash2 size={14} /> {busy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div>
+          <h1 className="page-title" style={{ marginBottom: 0 }}>Exercise Videos</h1>
+          {accessSummary && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+              <ShieldCheck size={12} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4, color: 'var(--accent-primary)' }} />
+              Your access: {accessSummary}
+            </p>
+          )}
+        </div>
+        <button
+          className={user && !videoPerms.canUpload ? 'btn-secondary' : 'btn-primary'}
+          onClick={handleAddVideoClick}
+          title={user && !videoPerms.canUpload ? 'Upload permission not granted' : 'Add a video'}
+        >
+          {user && !videoPerms.canUpload ? <Lock size={15} /> : <Plus size={16} />} Add Video
         </button>
       </div>
+      <p className="page-subtitle">A shared library — everyone sees the same videos.</p>
+
+      {error && !editing && <p className="form-error" style={{ marginBottom: '1rem' }}>{error}</p>}
 
       {/* Upload form */}
       {showForm && (
@@ -251,10 +413,6 @@ export default function VideosPage() {
                 onChange={e => setFile(e.target.files?.[0] ?? null)}
               />
             </div>
-
-            {error && (
-              <p style={{ color: 'var(--accent-danger)', fontSize: '0.8rem' }}>{error}</p>
-            )}
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button
@@ -308,18 +466,19 @@ export default function VideosPage() {
           <Video size={44} color="var(--text-secondary)" style={{ margin: '0 auto 0.75rem', display: 'block' }} />
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
             {videos.length === 0
-              ? 'No videos yet — sign in and add your first exercise video.'
+              ? 'No videos yet.'
               : 'No videos in this category.'}
           </p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {filtered.map((v, _idx) => {
+          {filtered.map(v => {
             const globalIdx = sortedVideos.findIndex(x => x.id === v.id);
+            const own = !!user && v.uploaded_by === user.id;
             return (
             <div key={v.id} className="card" style={{ padding: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.75rem' }}>
-                {/* Reorder arrows */}
+                {/* Reorder arrows (local preference) */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', flexShrink: 0, justifyContent: 'center' }}>
                   <button
                     style={{ background: 'none', border: 'none', cursor: globalIdx > 0 ? 'pointer' : 'default', color: globalIdx > 0 ? 'var(--text-secondary)' : 'rgba(255,255,255,0.1)', padding: '2px', display: 'flex' }}
@@ -340,63 +499,35 @@ export default function VideosPage() {
                 </div>
 
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  {editingId === v.id ? (
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.25rem' }}>
-                      <input
-                        className="input-date"
-                        style={{ fontFamily: 'inherit', flex: 1, fontSize: '0.9rem' }}
-                        value={editName}
-                        onChange={e => setEditName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleRename(v); if (e.key === 'Escape') { setEditingId(null); setEditName(''); } }}
-                        autoFocus
-                      />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, fontSize: '1rem' }}>{v.name}</span>
+                    <span style={{
+                      fontSize: '0.7rem',
+                      padding: '0.15rem 0.5rem',
+                      borderRadius: '999px',
+                      background: 'rgba(124,58,237,0.2)',
+                      color: 'var(--accent-secondary)',
+                      border: '1px solid rgba(124,58,237,0.4)',
+                    }}>
+                      {v.category}
+                    </span>
+                    {canEditVideo(v) && (
                       <button
-                        style={{ background: 'rgba(52,211,153,0.1)', border: '1px solid var(--accent-primary)', borderRadius: '6px', cursor: 'pointer', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
-                        onClick={() => handleRename(v)}
-                        title="Save name"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '2px' }}
+                        onClick={() => openEdit(v)}
+                        title="Edit name / category"
                       >
-                        <Check size={14} />
+                        <Pencil size={13} />
                       </button>
-                      <button
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '0.3rem' }}
-                        onClick={() => { setEditingId(null); setEditName(''); }}
-                        title="Cancel"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 600, fontSize: '1rem' }}>{v.name}</span>
-                      <span style={{
-                        fontSize: '0.7rem',
-                        padding: '0.15rem 0.5rem',
-                        borderRadius: '999px',
-                        background: 'rgba(124,58,237,0.2)',
-                        color: 'var(--accent-secondary)',
-                        border: '1px solid rgba(124,58,237,0.4)',
-                      }}>
-                        {v.category}
-                      </span>
-                      {user && v.uploaded_by === user.id && (
-                        <button
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '2px' }}
-                          onClick={() => { setEditingId(v.id); setEditName(v.name); }}
-                          title="Rename video"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono, monospace' }}>
                     {v.file_name} &nbsp;·&nbsp; {formatSize(v.size)}
                   </div>
-                  {v.uploaded_by !== user?.id && (
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <User size={11} /> shared by another user
-                    </div>
-                  )}
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <User size={11} />
+                    {own ? 'uploaded by you' : isAdmin && emails[v.uploaded_by] ? `uploaded by ${emails[v.uploaded_by]}` : 'shared by another user'}
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
@@ -418,10 +549,10 @@ export default function VideosPage() {
                     {playingId === v.id ? <X size={14} /> : <Play size={14} />}
                     {playingId === v.id ? 'Close' : 'Play'}
                   </button>
-                  {user && v.uploaded_by === user.id && (
+                  {canDeleteVideo(v) && (
                     <button
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', padding: '0.4rem' }}
-                      onClick={() => handleDelete(v)}
+                      className="icon-btn danger"
+                      onClick={() => setConfirmDelete(v)}
                       title="Delete video"
                     >
                       <Trash2 size={15} />

@@ -4,7 +4,7 @@ import {
   Home, Calendar, Flame, Zap, TrendingUp, Settings, User, Lightbulb,
   Video, Dumbbell, LogIn, LogOut, Shield, MoreHorizontal, Activity,
 } from 'lucide-react';
-import { useAuth, ADMIN_EMAIL } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 type NavEntry = { to: string; icon: typeof Home; label: string; end: boolean };
 
@@ -61,12 +61,11 @@ const MORE_NAV: NavEntry[] = [
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const isAdmin = user?.email === ADMIN_EMAIL;
   const moreActive = MORE_NAV.some(n =>
     n.end ? location.pathname === n.to : location.pathname.startsWith(n.to),
   );

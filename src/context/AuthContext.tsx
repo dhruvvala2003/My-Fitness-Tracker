@@ -1,37 +1,9 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-
-export const ADMIN_EMAIL = 'dkvala2003@gmail.com';
-
-export async function checkUserApproval(
-  userId: string,
-  email: string,
-): Promise<{ allowed: boolean; message?: string }> {
-  if (email === ADMIN_EMAIL) return { allowed: true };
-
-  const { data } = await supabase
-    .from('user_approvals')
-    .select('status')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (!data) return {
-    allowed: false,
-    message: 'Your account is pending admin approval. Please wait — you will be able to sign in once the admin approves your request.',
-  };
-  if (data.status === 'approved') return { allowed: true };
-  if (data.status === 'pending') {
-    return {
-      allowed: false,
-      message: 'Your account is pending admin approval. Please wait — you will be able to sign in once the admin approves your request.',
-    };
-  }
-  return {
-    allowed: false,
-    message: 'Your account has been deactivated. Please contact the admin.',
-  };
-}
+import { ADMIN_EMAIL, checkUserApproval, fetchVideoPermissions } from '../lib/auth';
+import { ALL_VIDEO_PERMISSIONS, NO_VIDEO_PERMISSIONS } from '../types';
+import type { VideoPermissions } from '../types';
 
 interface AuthContextType {
   user: User | null;
@@ -39,6 +11,9 @@ interface AuthContextType {
   loading: boolean;
   recoveryMode: boolean;
   authError: string | null;
+  isAdmin: boolean;
+  videoPerms: VideoPermissions;
+  refreshVideoPerms: () => Promise<void>;
   clearAuthError: () => void;
   signOut: () => Promise<void>;
 }
@@ -51,6 +26,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading]         = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [authError, setAuthError]     = useState<string | null>(null);
+  // Permissions are remembered together with the user they belong to, so a
+  // different account never briefly sees the previous account's rights.
+  const [permState, setPermState]     = useState<{ uid: string; perms: VideoPermissions } | null>(null);
 
   const clearAuthError = useCallback(() => setAuthError(null), []);
 
@@ -111,17 +89,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  const uid = user?.id ?? null;
+  const email = user?.email ?? '';
+  const isAdmin = email === ADMIN_EMAIL;
+
+  // Load video rights whenever the signed-in account changes.
+  useEffect(() => {
+    if (!uid) return;
+    let active = true;
+    fetchVideoPermissions(uid, email)
+      .then(perms => { if (active) setPermState({ uid, perms }); })
+      .catch(err => {
+        console.error('Could not load video permissions:', err);
+        if (active) setPermState({ uid, perms: NO_VIDEO_PERMISSIONS });
+      });
+    return () => { active = false; };
+  }, [uid, email]);
+
+  const refreshVideoPerms = useCallback(async () => {
+    if (!uid) return;
+    const perms = await fetchVideoPermissions(uid, email);
+    setPermState({ uid, perms });
+  }, [uid, email]);
+
+  const videoPerms: VideoPermissions = !uid
+    ? NO_VIDEO_PERMISSIONS
+    : isAdmin
+      ? ALL_VIDEO_PERMISSIONS
+      : permState?.uid === uid ? permState.perms : NO_VIDEO_PERMISSIONS;
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, recoveryMode, authError, clearAuthError, signOut }}>
+    <AuthContext.Provider value={{
+      user, session, loading, recoveryMode, authError,
+      isAdmin, videoPerms, refreshVideoPerms,
+      clearAuthError, signOut,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

@@ -1,21 +1,79 @@
-import { useState, useEffect } from 'react';
-import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn, KeyRound } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, AlertTriangle, Eye, EyeOff, LogOut, LogIn, KeyRound, UserRound, Download, Save } from 'lucide-react';
 import { useAppData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import LoginPromptModal from '../components/LoginPromptModal';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { exportData } from '../utils/dataExport';
+import { calcCalorieTarget, ACTIVITY_LABELS, GOAL_LABELS } from '../utils/calories';
+import type { ActivityLevel, Goal, Sex, UserSettings } from '../types';
+
+interface ProfileForm {
+  heightCm: string;
+  birthYear: string;
+  sex: Sex | '';
+  activityLevel: ActivityLevel;
+  goal: Goal;
+  targetWeightKg: string;
+  calorieTargetOverride: string;
+  waterGoal: string;
+  restSeconds: string;
+}
+
+function toForm(s: UserSettings): ProfileForm {
+  return {
+    heightCm: s.heightCm ? String(s.heightCm) : '',
+    birthYear: s.birthYear ? String(s.birthYear) : '',
+    sex: s.sex ?? '',
+    activityLevel: s.activityLevel,
+    goal: s.goal,
+    targetWeightKg: s.targetWeightKg ? String(s.targetWeightKg) : '',
+    calorieTargetOverride: s.calorieTargetOverride ? String(s.calorieTargetOverride) : '',
+    waterGoal: String(s.waterGoal),
+    restSeconds: String(s.restSeconds),
+  };
+}
+
+function fromForm(f: ProfileForm, base: UserSettings): UserSettings {
+  const num = (v: string) => (v.trim() === '' ? null : Number(v));
+  return {
+    ...base,
+    heightCm: num(f.heightCm),
+    birthYear: num(f.birthYear),
+    sex: f.sex === '' ? null : f.sex,
+    activityLevel: f.activityLevel,
+    goal: f.goal,
+    targetWeightKg: num(f.targetWeightKg),
+    calorieTargetOverride: num(f.calorieTargetOverride),
+    waterGoal: Math.max(1, Math.min(30, Number(f.waterGoal) || 8)),
+    restSeconds: Math.max(0, Math.min(600, Number(f.restSeconds) || 0)),
+  };
+}
 
 export default function SettingsPage() {
-  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleNoteColumn, updatePopupMessage } = useAppData();
+  const { data, addHabitColumn, deleteHabitColumn, renameHabitColumn, toggleColumnVisibility, toggleNoteColumn, updatePopupMessage, updateSettings } = useAppData();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const [newCol, setNewCol] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
-  const [popupMsg, setPopupMsg] = useState(data.popupMessage ?? '');
+  // Popup message: a local edit overrides the saved value until it is saved.
+  const [popupEdit, setPopupEdit] = useState<string | null>(null);
+  const popupMsg = popupEdit ?? data.settings.popupMessage ?? '';
+  const setPopupMsg = setPopupEdit;
 
-  useEffect(() => { setPopupMsg(data.popupMessage ?? ''); }, [data.popupMessage]);
+  // Profile form: local edits override the saved profile until saved.
+  const savedSettings = data.settings;
+  const [formEdits, setFormEdits] = useState<ProfileForm | null>(null);
+  const form = formEdits ?? toForm(savedSettings);
+  const setForm = (update: (f: ProfileForm) => ProfileForm) =>
+    setFormEdits(prev => update(prev ?? toForm(savedSettings)));
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const latestWeight = data.weights[data.weights.length - 1]?.weightKg;
+  const preview = calcCalorieTarget(fromForm(form, data.settings), latestWeight);
 
   // Change password state
   const [showChangePw, setShowChangePw] = useState(false);
@@ -60,6 +118,43 @@ export default function SettingsPage() {
     setNewCol('');
   }
 
+  async function saveProfile() {
+    if (!user) { setShowLoginPrompt(true); return; }
+    setProfileSaving(true);
+    setProfileMsg(null);
+    try {
+      const next = fromForm(form, data.settings);
+      await updateSettings({
+        heightCm: next.heightCm,
+        birthYear: next.birthYear,
+        sex: next.sex,
+        activityLevel: next.activityLevel,
+        goal: next.goal,
+        targetWeightKg: next.targetWeightKg,
+        calorieTargetOverride: next.calorieTargetOverride,
+        waterGoal: next.waterGoal,
+        restSeconds: next.restSeconds,
+      });
+      setFormEdits(null); // follow the saved profile again
+      setProfileMsg({ ok: true, text: 'Profile saved.' });
+    } catch (err) {
+      setProfileMsg({ ok: false, text: `${(err as Error).message} — make sure supabase-migration-v2.sql has been run in your Supabase project.` });
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function savePopup(message: string) {
+    try {
+      await updatePopupMessage(message);
+      setPopupEdit(null);
+    } catch (err) {
+      setProfileMsg({ ok: false, text: (err as Error).message });
+    }
+  }
+
+  const thisYear = new Date().getFullYear();
+
   return (
     <div className="page">
       {showLoginPrompt && (
@@ -70,6 +165,109 @@ export default function SettingsPage() {
       )}
 
       <h1 className="page-title">Settings</h1>
+      <p className="page-subtitle">Profile, goals, habit columns and account.</p>
+
+      {/* ── Profile & goals ── */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="row" style={{ gap: '0.5rem', marginBottom: '0.25rem' }}>
+          <UserRound size={16} color="var(--accent-primary)" />
+          <p style={{ fontWeight: 600 }}>Profile & daily calorie target</p>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          Used to work out how much you should eat each day (Mifflin-St Jeor BMR × activity, adjusted for your goal).
+          Your weight comes from the latest entry on the Progress page{latestWeight ? ` (${latestWeight} kg)` : ' — log it there first'}.
+        </p>
+
+        <div className="profile-grid">
+          <div>
+            <p className="field-label">Height (cm)</p>
+            <input className="input" type="number" min="100" max="250" placeholder="e.g. 175" value={form.heightCm}
+              onChange={e => setForm(f => ({ ...f, heightCm: e.target.value }))} />
+          </div>
+          <div>
+            <p className="field-label">Birth year</p>
+            <input className="input" type="number" min={thisYear - 100} max={thisYear - 10} placeholder="e.g. 2003" value={form.birthYear}
+              onChange={e => setForm(f => ({ ...f, birthYear: e.target.value }))} />
+          </div>
+          <div>
+            <p className="field-label">Sex</p>
+            <select className="input" value={form.sex} onChange={e => setForm(f => ({ ...f, sex: e.target.value as Sex | '' }))}>
+              <option value="">Select…</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other / prefer not to say</option>
+            </select>
+          </div>
+          <div>
+            <p className="field-label">Activity level</p>
+            <select className="input" value={form.activityLevel} onChange={e => setForm(f => ({ ...f, activityLevel: e.target.value as ActivityLevel }))}>
+              {(Object.keys(ACTIVITY_LABELS) as ActivityLevel[]).map(k => (
+                <option key={k} value={k}>{ACTIVITY_LABELS[k].label} — {ACTIVITY_LABELS[k].hint}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="field-label">Goal</p>
+            <select className="input" value={form.goal} onChange={e => setForm(f => ({ ...f, goal: e.target.value as Goal }))}>
+              {(Object.keys(GOAL_LABELS) as Goal[]).map(k => (
+                <option key={k} value={k}>{GOAL_LABELS[k]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="field-label">Target weight (kg)</p>
+            <input className="input" type="number" min="30" max="300" step="0.5" placeholder="optional" value={form.targetWeightKg}
+              onChange={e => setForm(f => ({ ...f, targetWeightKg: e.target.value }))} />
+          </div>
+          <div>
+            <p className="field-label">Custom calorie target</p>
+            <input className="input" type="number" min="800" max="10000" step="50" placeholder="leave empty = auto" value={form.calorieTargetOverride}
+              onChange={e => setForm(f => ({ ...f, calorieTargetOverride: e.target.value }))} />
+          </div>
+          <div>
+            <p className="field-label">Water goal (glasses / day)</p>
+            <input className="input" type="number" min="1" max="30" value={form.waterGoal}
+              onChange={e => setForm(f => ({ ...f, waterGoal: e.target.value }))} />
+          </div>
+          <div>
+            <p className="field-label">Rest between sets (sec)</p>
+            <input className="input" type="number" min="0" max="600" step="15" value={form.restSeconds}
+              onChange={e => setForm(f => ({ ...f, restSeconds: e.target.value }))} />
+          </div>
+        </div>
+
+        {/* Live preview */}
+        <div className="target-preview">
+          <div>
+            <div className="card-label">BMR</div>
+            <div className="cal-stat-value">{preview.bmr ?? '—'}</div>
+          </div>
+          <div>
+            <div className="card-label">Maintenance</div>
+            <div className="cal-stat-value">{preview.tdee ?? '—'}</div>
+          </div>
+          <div>
+            <div className="card-label">Daily target</div>
+            <div className="cal-stat-value" style={{ color: 'var(--accent-primary)' }}>{preview.target || '—'}</div>
+          </div>
+          <div style={{ flex: 1, minWidth: 180, fontSize: '0.75rem', color: 'var(--text-secondary)', alignSelf: 'center' }}>
+            {preview.source === 'override' && 'Using your custom target.'}
+            {preview.source === 'profile' && `Computed from your profile (${GOAL_LABELS[form.goal].toLowerCase()}).`}
+            {preview.source === 'none' && `Still needed: ${preview.missing.join(', ')}.`}
+          </div>
+        </div>
+
+        <div className="row" style={{ gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+          <button className="btn-primary" onClick={saveProfile} disabled={profileSaving}>
+            <Save size={15} /> {profileSaving ? 'Saving…' : 'Save profile'}
+          </button>
+          {profileMsg && (
+            <span style={{ fontSize: '0.78rem', color: profileMsg.ok ? 'var(--accent-primary)' : 'var(--accent-danger)' }}>
+              {profileMsg.text}
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* ── Habit Columns ── */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -185,7 +383,7 @@ export default function SettingsPage() {
           <p style={{ fontWeight: 600 }}>Homepage Popup Message</p>
         </div>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Set a message that will appear as a beautiful animated popup when you open the homepage.
+          Set a message that will appear as an animated popup when you open the homepage.
           Leave empty to disable the popup.
         </p>
         <textarea
@@ -193,10 +391,10 @@ export default function SettingsPage() {
           value={popupMsg}
           onChange={e => setPopupMsg(e.target.value)}
           placeholder="Enter your motivational message, reminder, or announcement here..."
-          rows={5}
+          rows={4}
           style={{
             resize: 'vertical',
-            minHeight: '120px',
+            minHeight: '100px',
             fontFamily: 'var(--font-sans)',
             fontSize: '0.9rem',
             lineHeight: 1.6,
@@ -205,7 +403,7 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'center' }}>
           <button
             className="btn-primary"
-            onClick={() => requireAuth(() => updatePopupMessage(popupMsg))}
+            onClick={() => requireAuth(() => savePopup(popupMsg))}
             style={{ flexShrink: 0 }}
           >
             💾 Save Message
@@ -213,13 +411,13 @@ export default function SettingsPage() {
           {popupMsg && (
             <button
               className="btn-danger"
-              onClick={() => requireAuth(() => { setPopupMsg(''); updatePopupMessage(''); })}
+              onClick={() => requireAuth(() => { setPopupMsg(''); savePopup(''); })}
               style={{ flexShrink: 0 }}
             >
               Clear
             </button>
           )}
-          {data.popupMessage === popupMsg && popupMsg && (
+          {data.settings.popupMessage === popupMsg && popupMsg && (
             <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary)' }}>✓ Saved</span>
           )}
         </div>
@@ -243,6 +441,9 @@ export default function SettingsPage() {
                 onClick={() => { setShowChangePw(v => !v); setPwError(null); setPwSuccess(false); }}
               >
                 <KeyRound size={15} /> {showChangePw ? 'Cancel' : 'Change Password'}
+              </button>
+              <button className="btn-secondary" onClick={() => exportData(data)} title="Download all your data as JSON">
+                <Download size={15} /> Export my data
               </button>
             </div>
 
